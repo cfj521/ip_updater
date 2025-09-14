@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 	"time"
 
@@ -34,13 +33,6 @@ func main() {
 	// Initialize logger
 	log := logger.New()
 
-	// Check if running for the first time
-	if isFirstRun() {
-		if err := handleFirstRun(); err != nil {
-			log.Fatalf("Failed to handle first run: %v", err)
-		}
-	}
-
 	// Load configuration
 	cfg, err := config.Load(*configFile)
 	if err != nil {
@@ -63,31 +55,59 @@ func main() {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	log.Info("IP-Updater started")
+	log.Infof("DNS check interval: %d minutes", cfg.DNSCheckInterval/60)
+	log.Infof("File check interval: %d minutes", cfg.FileCheckInterval/60)
 
-	// Main loop
-	ticker := time.NewTicker(time.Duration(cfg.CheckInterval) * time.Second)
-	defer ticker.Stop()
+	// 创建分离的定时器
+	dnsTicker := time.NewTicker(time.Duration(cfg.DNSCheckInterval) * time.Second)
+	defer dnsTicker.Stop()
 
-	var lastIP string
+	fileTicker := time.NewTicker(time.Duration(cfg.FileCheckInterval) * time.Second)
+	defer fileTicker.Stop()
+
+	var dnsLastIP string
+	var fileLastIP string
 
 	for {
 		select {
-		case <-ticker.C:
+		case <-dnsTicker.C:
 			currentIP, err := ipDetector.GetPublicIP()
 			if err != nil {
-				log.Errorf("Failed to get public IP: %v", err)
+				log.Errorf("Failed to get public IP for DNS update: %v", err)
 				continue
 			}
 
-			if currentIP != lastIP {
-				log.Infof("IP changed from %s to %s", lastIP, currentIP)
+			if currentIP != dnsLastIP {
+				log.Infof("DNS check: IP changed from %s to %s", dnsLastIP, currentIP)
 
-				if err := ipUpdater.UpdateAll(currentIP); err != nil {
-					log.Errorf("Failed to update IP: %v", err)
+				if err := ipUpdater.UpdateDNS(currentIP); err != nil {
+					log.Errorf("Failed to update DNS: %v", err)
 				} else {
-					log.Infof("Successfully updated IP to %s", currentIP)
-					lastIP = currentIP
+					log.Infof("Successfully updated DNS to %s", currentIP)
+					dnsLastIP = currentIP
 				}
+			} else {
+				log.Debugf("DNS check: IP unchanged (%s)", currentIP)
+			}
+
+		case <-fileTicker.C:
+			currentIP, err := ipDetector.GetPublicIP()
+			if err != nil {
+				log.Errorf("Failed to get public IP for file update: %v", err)
+				continue
+			}
+
+			if currentIP != fileLastIP {
+				log.Infof("File check: IP changed from %s to %s", fileLastIP, currentIP)
+
+				if err := ipUpdater.UpdateFiles(currentIP); err != nil {
+					log.Errorf("Failed to update files: %v", err)
+				} else {
+					log.Infof("Successfully updated files to %s", currentIP)
+					fileLastIP = currentIP
+				}
+			} else {
+				log.Debugf("File check: IP unchanged (%s)", currentIP)
 			}
 
 		case sig := <-sigChan:
@@ -97,59 +117,3 @@ func main() {
 	}
 }
 
-func isFirstRun() bool {
-	_, err := os.Stat("/etc/systemd/system/ip-updater.service")
-	return os.IsNotExist(err)
-}
-
-func handleFirstRun() error {
-	fmt.Println("First run detected. Do you want to create systemd service? (y/n): ")
-	var response string
-	fmt.Scanln(&response)
-
-	if response == "y" || response == "Y" {
-		return createSystemdService()
-	}
-
-	return nil
-}
-
-func createSystemdService() error {
-	execPath, err := os.Executable()
-	if err != nil {
-		return err
-	}
-
-	serviceContent := fmt.Sprintf(`[Unit]
-Description=IP Updater Service
-After=network.target
-
-[Service]
-Type=simple
-User=root
-ExecStart=%s -config=/etc/ip_updater/config.conf
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-`, execPath)
-
-	servicePath := "/etc/systemd/system/ip-updater.service"
-
-	// Create directory if it doesn't exist
-	if err := os.MkdirAll(filepath.Dir(servicePath), 0755); err != nil {
-		return err
-	}
-
-	if err := os.WriteFile(servicePath, []byte(serviceContent), 0644); err != nil {
-		return err
-	}
-
-	fmt.Println("Systemd service created successfully!")
-	fmt.Println("To enable and start the service, run:")
-	fmt.Println("  sudo systemctl enable ip-updater")
-	fmt.Println("  sudo systemctl start ip-updater")
-
-	return nil
-}

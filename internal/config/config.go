@@ -10,12 +10,14 @@ import (
 )
 
 type Config struct {
-	CheckInterval int               `toml:"check_interval"`
-	IPDetection   detector.Config   `toml:"ip_detection"`
-	DNSUpdaters   []DNSUpdater      `toml:"dns_updater"`
-	FileUpdaters  []FileUpdater     `toml:"file_updater"`
-	Retry         RetryConfig       `toml:"retry"`
-	Logging       LoggingConfig     `toml:"logging"`
+	CheckInterval     int               `toml:"check_interval"`      // 兼容旧版本，现在作为默认间隔
+	DNSCheckInterval  int               `toml:"dns_check_interval"`  // DNS更新检查间隔
+	FileCheckInterval int               `toml:"file_check_interval"` // 文件更新检查间隔
+	IPDetection       detector.Config   `toml:"ip_detection"`
+	DNSUpdaters       []DNSUpdater      `toml:"dns_updater"`
+	FileUpdaters      []FileUpdater     `toml:"file_updater"`
+	Retry             RetryConfig       `toml:"retry"`
+	Logging           LoggingConfig     `toml:"logging"`
 }
 
 type DNSUpdater struct {
@@ -70,21 +72,31 @@ func Load(configPath string) (*Config, error) {
 
 	// Set defaults
 	if config.CheckInterval == 0 {
-		config.CheckInterval = 600 // 10 minutes
+		config.CheckInterval = 600 // 10 minutes (兼容旧版本)
+	}
+
+	// 设置DNS和文件更新的分离间隔
+	if config.DNSCheckInterval == 0 {
+		config.DNSCheckInterval = 3600 // 60 minutes
+	}
+
+	if config.FileCheckInterval == 0 {
+		config.FileCheckInterval = 600 // 10 minutes
 	}
 
 	if len(config.IPDetection.APIEndpoints) == 0 {
 		config.IPDetection.APIEndpoints = []string{
-			"https://api.ipify.org",
-			"https://ipv4.icanhazip.com",
-			"https://checkip.amazonaws.com",
+			"https://myip.ipip.net",
+			"https://ddns.oray.com/checkip",
+			"https://ip.3322.net",
+			"https://members.3322.org/dyndns/getip",
 		}
 	}
 
 	if len(config.IPDetection.WebEndpoints) == 0 {
 		config.IPDetection.WebEndpoints = []string{
-			"https://ifconfig.me/ip",
-			"https://ipinfo.io/ip",
+			"https://ip.cn/api/index?ip&type=0",
+			"https://ip4.seeip.org",
 		}
 	}
 
@@ -124,24 +136,31 @@ func createDefaultConfig(configPath string) error {
 
 	defaultConfig := `# IP-Updater Configuration File
 
-# Check interval in seconds (default: 600 = 10 minutes)
+# Default check interval in seconds (兼容旧版本，建议使用下面的分离配置)
 check_interval = 600
+
+# DNS更新检查间隔 (seconds, default: 3600 = 60 minutes)
+dns_check_interval = 3600
+
+# 文件更新检查间隔 (seconds, default: 600 = 10 minutes)
+file_check_interval = 600
 
 [ip_detection]
 # Timeout for IP detection requests in seconds
 timeout = 30
 
-# API endpoints for getting public IP (tried first)
+# API endpoints for getting public IP (tried first) - 中国大陆可访问服务
 api_endpoints = [
-    "https://api.ipify.org",
-    "https://ipv4.icanhazip.com",
-    "https://checkip.amazonaws.com"
+    "https://myip.ipip.net",
+    "https://ddns.oray.com/checkip",
+    "https://ip.3322.net",
+    "https://members.3322.org/dyndns/getip"
 ]
 
-# Web endpoints for getting public IP (fallback)
+# Web endpoints for getting public IP (fallback) - 中国大陆可访问服务
 web_endpoints = [
-    "https://ifconfig.me/ip",
-    "https://ipinfo.io/ip"
+    "https://ip.cn/api/index?ip&type=0",
+    "https://ip4.seeip.org"
 ]
 
 [retry]

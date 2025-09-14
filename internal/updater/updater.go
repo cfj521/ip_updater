@@ -31,6 +31,26 @@ func (u *Updater) UpdateAll(newIP string) error {
 	var errors []string
 
 	// Update DNS records
+	if err := u.UpdateDNS(newIP); err != nil {
+		errors = append(errors, err.Error())
+	}
+
+	// Update configuration files
+	if err := u.UpdateFiles(newIP); err != nil {
+		errors = append(errors, err.Error())
+	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf("some updates failed: %v", errors)
+	}
+
+	return nil
+}
+
+func (u *Updater) UpdateDNS(newIP string) error {
+	var errors []string
+
+	// Update DNS records
 	for _, dnsUpdater := range u.config.DNSUpdaters {
 		if err := u.updateDNSWithRetry(dnsUpdater, newIP); err != nil {
 			errMsg := fmt.Sprintf("DNS update failed for %s: %v", dnsUpdater.Name, err)
@@ -40,6 +60,16 @@ func (u *Updater) UpdateAll(newIP string) error {
 			u.logger.Infof("Successfully updated DNS records for %s", dnsUpdater.Name)
 		}
 	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf("DNS updates failed: %v", errors)
+	}
+
+	return nil
+}
+
+func (u *Updater) UpdateFiles(newIP string) error {
+	var errors []string
 
 	// Update configuration files
 	for _, fileUpdater := range u.config.FileUpdaters {
@@ -53,7 +83,7 @@ func (u *Updater) UpdateAll(newIP string) error {
 	}
 
 	if len(errors) > 0 {
-		return fmt.Errorf("some updates failed: %v", errors)
+		return fmt.Errorf("File updates failed: %v", errors)
 	}
 
 	return nil
