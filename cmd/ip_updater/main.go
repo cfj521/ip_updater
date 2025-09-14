@@ -20,7 +20,7 @@ var (
 	daemon     = flag.Bool("daemon", false, "Run as daemon")
 )
 
-const Version = "1.0.0"
+var Version = "1.1.0-dev" // Will be overridden by build script
 
 func main() {
 	flag.Parse()
