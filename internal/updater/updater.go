@@ -60,16 +60,6 @@ func (u *Updater) UpdateAll(newIP string) error {
 }
 
 func (u *Updater) updateDNSWithRetry(dnsUpdater config.DNSUpdater, newIP string) error {
-	provider, err := dns.CreateProvider(
-		dnsUpdater.Provider,
-		dnsUpdater.AccessKey,
-		dnsUpdater.SecretKey,
-		dnsUpdater.Token,
-	)
-	if err != nil {
-		return err
-	}
-
 	maxRetries := u.config.Retry.MaxRetries
 	if maxRetries == -1 {
 		maxRetries = 999999 // Set a very high number for "infinite" retries
