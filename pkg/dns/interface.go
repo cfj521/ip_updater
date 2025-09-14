@@ -51,6 +51,13 @@ func (dm *DNSManager) UpdateDNSRecord(updater config.DNSUpdater, ip string) erro
 		return ErrProviderNotFound
 	}
 
+	// Set credentials for the provider before using it
+	if updater.Provider == "cloudflare" && updater.Token != "" {
+		provider.SetCredentials(updater.Token, "")
+	} else {
+		provider.SetCredentials(updater.AccessKey, updater.SecretKey)
+	}
+
 	if dm.logger != nil {
 		dm.logger.Infof("📋 DNS查询开始 - 提供商: %s, 域名: %s", updater.Provider, updater.Domain)
 	}
