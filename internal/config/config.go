@@ -201,7 +201,7 @@ max_age = 30
 # [[dns_updater.record]]
 # name = "@"
 # type = "A"
-# ttl = 300
+# ttl = 600
 
 # [[dns_updater]]
 # name = "huawei-example"
@@ -212,7 +212,7 @@ max_age = 30
 # [[dns_updater.record]]
 # name = "subdomain"
 # type = "A"
-# ttl = 300
+# ttl = 600
 
 # [[dns_updater]]
 # name = "cloudflare-example"
@@ -222,7 +222,7 @@ max_age = 30
 # [[dns_updater.record]]
 # name = "api"
 # type = "A"
-# ttl = 1
+# ttl = 600
 
 # [[dns_updater]]
 # name = "godaddy-example"
@@ -233,7 +233,7 @@ max_age = 30
 # [[dns_updater.record]]
 # name = "mail"
 # type = "A"
-# ttl = 3600
+# ttl = 600
 
 # Example file updater configurations
 

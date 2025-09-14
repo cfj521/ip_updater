@@ -40,9 +40,8 @@ systemctl daemon-reload
 # Create default config if it doesn't exist
 if [ ! -f "${CONFIG_DIR}/config.conf" ]; then
     echo "Creating default configuration..."
-    ${INSTALL_DIR}/${BINARY_NAME} -config=${CONFIG_DIR}/config.conf &
-    sleep 2
-    killall ${BINARY_NAME} 2>/dev/null || true
+    cp default-config.conf ${CONFIG_DIR}/config.conf
+    chmod 644 ${CONFIG_DIR}/config.conf
 fi
 
 echo "Installation complete!"
