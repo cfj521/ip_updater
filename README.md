@@ -174,11 +174,11 @@ sudo systemctl restart ip-updater
 
 | 服务商 | 状态 | 说明 |
 |--------|------|------|
-| 阿里云 | ✅ 已实现 | 完整的API实现 |
-| 腾讯云 | ⚠️ 待完善 | 框架已准备，需要API实现 |
-| 华为云 | ⚠️ 待完善 | 框架已准备，需要API实现 |
-| Cloudflare | ⚠️ 待完善 | 框架已准备，需要API实现 |
-| GoDaddy | ⚠️ 待完善 | 框架已准备，需要API实现 |
+| 阿里云 | ✅ 已实现 | 完整的API实现，支持阿里云DNS |
+| 腾讯云 | ✅ 已实现 | 完整的DNSPod API实现，支持腾讯云DNS |
+| 华为云 | ✅ 已实现 | 完整的华为云DNS API实现 |
+| Cloudflare | ✅ 已实现 | 完整的Cloudflare API v4实现 |
+| GoDaddy | ✅ 已实现 | 完整的GoDaddy API实现 |
 
 ## 开发说明
 
