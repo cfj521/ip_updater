@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -171,9 +170,6 @@ func (p *TencentDNSProvider) generateAuthorization(params map[string]string, tim
 	// TC3-HMAC-SHA256 algorithm
 	algorithm := "TC3-HMAC-SHA256"
 	service := "dnspod"
-	version := params["Version"]
-	action := params["Action"]
-	region := params["Region"]
 
 	// Step 1: Create canonical request
 	httpMethod := "POST"
