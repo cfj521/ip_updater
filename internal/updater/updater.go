@@ -94,6 +94,7 @@ func (u *Updater) updateFileWithRetry(fileUpdater config.FileUpdater, newIP stri
 		fileUpdater.KeyPath,
 		fileUpdater.Backup,
 	)
+	updater.SetLogger(u.logger)
 
 	// Validate file first
 	if err := updater.ValidateFile(); err != nil {

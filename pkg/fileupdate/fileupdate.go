@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -17,6 +20,11 @@ type FileUpdater struct {
 	Format   string
 	KeyPath  string
 	Backup   bool
+	Logger   Logger
+}
+
+type Logger interface {
+	Warnf(format string, args ...interface{})
 }
 
 func New(filePath, format, keyPath string, backup bool) *FileUpdater {
@@ -28,7 +36,23 @@ func New(filePath, format, keyPath string, backup bool) *FileUpdater {
 	}
 }
 
+func (fu *FileUpdater) SetLogger(logger Logger) {
+	fu.Logger = logger
+}
+
 func (fu *FileUpdater) UpdateIP(newIP string) error {
+	// Check current value first
+	currentValue, err := fu.GetCurrentValue()
+	if err == nil {
+		// Process the new IP value considering current value's mask
+		processedIP := fu.processIPWithMask(currentValue, newIP)
+		if currentValue == processedIP {
+			// Current value matches new value, skip update
+			return nil
+		}
+		newIP = processedIP
+	}
+
 	// Create backup if enabled
 	if fu.Backup {
 		if err := fu.createBackup(); err != nil {
@@ -70,6 +94,7 @@ func (fu *FileUpdater) createBackup() error {
 }
 
 func (fu *FileUpdater) updateJSON(newIP string) error {
+	// Read and prepare data
 	data, err := os.ReadFile(fu.FilePath)
 	if err != nil {
 		return err
@@ -89,10 +114,12 @@ func (fu *FileUpdater) updateJSON(newIP string) error {
 		return err
 	}
 
-	return os.WriteFile(fu.FilePath, updatedData, 0644)
+	// Atomic write to minimize file lock time
+	return fu.atomicWrite(fu.FilePath, updatedData)
 }
 
 func (fu *FileUpdater) updateYAML(newIP string) error {
+	// Read and prepare data
 	data, err := os.ReadFile(fu.FilePath)
 	if err != nil {
 		return err
@@ -112,10 +139,12 @@ func (fu *FileUpdater) updateYAML(newIP string) error {
 		return err
 	}
 
-	return os.WriteFile(fu.FilePath, updatedData, 0644)
+	// Atomic write to minimize file lock time
+	return fu.atomicWrite(fu.FilePath, updatedData)
 }
 
 func (fu *FileUpdater) updateTOML(newIP string) error {
+	// Read and prepare data
 	var tomlData map[string]interface{}
 	if _, err := toml.DecodeFile(fu.FilePath, &tomlData); err != nil {
 		return err
@@ -125,16 +154,18 @@ func (fu *FileUpdater) updateTOML(newIP string) error {
 		return err
 	}
 
-	file, err := os.Create(fu.FilePath)
-	if err != nil {
+	// Prepare buffer to minimize file lock time
+	var buf strings.Builder
+	if err := toml.NewEncoder(&buf).Encode(tomlData); err != nil {
 		return err
 	}
-	defer file.Close()
 
-	return toml.NewEncoder(file).Encode(tomlData)
+	// Atomic write to minimize file lock time
+	return fu.atomicWrite(fu.FilePath, []byte(buf.String()))
 }
 
 func (fu *FileUpdater) updateINI(newIP string) error {
+	// Read and prepare data
 	cfg, err := ini.Load(fu.FilePath)
 	if err != nil {
 		return err
@@ -159,7 +190,14 @@ func (fu *FileUpdater) updateINI(newIP string) error {
 
 	section.Key(keyName).SetValue(newIP)
 
-	return cfg.SaveTo(fu.FilePath)
+	// Prepare buffer to minimize file lock time
+	var buf strings.Builder
+	if _, err := cfg.WriteTo(&buf); err != nil {
+		return err
+	}
+
+	// Atomic write to minimize file lock time
+	return fu.atomicWrite(fu.FilePath, []byte(buf.String()))
 }
 
 func (fu *FileUpdater) setNestedValue(data map[string]interface{}, keyPath string, value interface{}) error {
@@ -182,6 +220,214 @@ func (fu *FileUpdater) setNestedValue(data map[string]interface{}, keyPath strin
 	current[finalKey] = value
 
 	return nil
+}
+
+func (fu *FileUpdater) GetCurrentValue() (string, error) {
+	switch strings.ToLower(fu.Format) {
+	case "json":
+		return fu.getCurrentValueJSON()
+	case "yaml", "yml":
+		return fu.getCurrentValueYAML()
+	case "toml":
+		return fu.getCurrentValueTOML()
+	case "ini":
+		return fu.getCurrentValueINI()
+	default:
+		return "", fmt.Errorf("unsupported file format: %s", fu.Format)
+	}
+}
+
+func (fu *FileUpdater) getCurrentValueJSON() (string, error) {
+	data, err := os.ReadFile(fu.FilePath)
+	if err != nil {
+		return "", err
+	}
+
+	var jsonData map[string]interface{}
+	if err := json.Unmarshal(data, &jsonData); err != nil {
+		return "", err
+	}
+
+	value, err := fu.getNestedValue(jsonData, fu.KeyPath)
+	if err != nil {
+		return "", err
+	}
+
+	if str, ok := value.(string); ok {
+		return str, nil
+	}
+	return "", fmt.Errorf("value is not a string")
+}
+
+func (fu *FileUpdater) getCurrentValueYAML() (string, error) {
+	data, err := os.ReadFile(fu.FilePath)
+	if err != nil {
+		return "", err
+	}
+
+	var yamlData map[string]interface{}
+	if err := yaml.Unmarshal(data, &yamlData); err != nil {
+		return "", err
+	}
+
+	value, err := fu.getNestedValue(yamlData, fu.KeyPath)
+	if err != nil {
+		return "", err
+	}
+
+	if str, ok := value.(string); ok {
+		return str, nil
+	}
+	return "", fmt.Errorf("value is not a string")
+}
+
+func (fu *FileUpdater) getCurrentValueTOML() (string, error) {
+	var tomlData map[string]interface{}
+	if _, err := toml.DecodeFile(fu.FilePath, &tomlData); err != nil {
+		return "", err
+	}
+
+	value, err := fu.getNestedValue(tomlData, fu.KeyPath)
+	if err != nil {
+		return "", err
+	}
+
+	if str, ok := value.(string); ok {
+		return str, nil
+	}
+	return "", fmt.Errorf("value is not a string")
+}
+
+func (fu *FileUpdater) getCurrentValueINI() (string, error) {
+	cfg, err := ini.Load(fu.FilePath)
+	if err != nil {
+		return "", err
+	}
+
+	parts := strings.Split(fu.KeyPath, "/")
+	if len(parts) != 2 {
+		return "", fmt.Errorf("invalid key path for INI format: %s (expected: section/key)", fu.KeyPath)
+	}
+
+	sectionName := parts[0]
+	keyName := parts[1]
+
+	section, err := cfg.GetSection(sectionName)
+	if err != nil {
+		return "", err
+	}
+
+	key := section.Key(keyName)
+	return key.String(), nil
+}
+
+func (fu *FileUpdater) atomicWrite(filePath string, data []byte) error {
+	// Create a temporary file in the same directory as the target file
+	// This ensures it's on the same filesystem for atomic rename
+	dir := filepath.Dir(filePath)
+	tempFile, err := os.CreateTemp(dir, ".tmp_"+filepath.Base(filePath))
+	if err != nil {
+		return fmt.Errorf("failed to create temp file: %w", err)
+	}
+
+	tempPath := tempFile.Name()
+
+	// Clean up temp file if something goes wrong
+	defer func() {
+		if tempFile != nil {
+			tempFile.Close()
+			os.Remove(tempPath)
+		}
+	}()
+
+	// Write data to temp file
+	if _, err := tempFile.Write(data); err != nil {
+		return fmt.Errorf("failed to write to temp file: %w", err)
+	}
+
+	// Sync to ensure data is written
+	if err := tempFile.Sync(); err != nil {
+		return fmt.Errorf("failed to sync temp file: %w", err)
+	}
+
+	// Close the temp file
+	if err := tempFile.Close(); err != nil {
+		return fmt.Errorf("failed to close temp file: %w", err)
+	}
+	tempFile = nil // Prevent cleanup defer from trying to close again
+
+	// Atomic rename - this minimizes the lock time to just the rename operation
+	if err := os.Rename(tempPath, filePath); err != nil {
+		return fmt.Errorf("failed to atomic rename: %w", err)
+	}
+
+	return nil
+}
+
+func (fu *FileUpdater) processIPWithMask(currentValue, newIP string) string {
+	// Check if current value contains a subnet mask
+	cidrRegex := regexp.MustCompile(`^(.+?)(/\d+)$`)
+	matches := cidrRegex.FindStringSubmatch(currentValue)
+
+	if len(matches) == 3 {
+		// Current value has a mask, preserve it
+		currentIP := matches[1]
+		mask := matches[2]
+
+		// Validate current IP
+		if net.ParseIP(currentIP) == nil {
+			if fu.Logger != nil {
+				fu.Logger.Warnf("Current IP value '%s' is not a valid IP format, but updating anyway", currentIP)
+			}
+		}
+
+		// Validate new IP
+		if net.ParseIP(newIP) == nil {
+			if fu.Logger != nil {
+				fu.Logger.Warnf("New IP value '%s' is not a valid IP format, but updating anyway", newIP)
+			}
+		}
+
+		// Return new IP with preserved mask
+		return newIP + mask
+	} else {
+		// No mask in current value, check if it's a valid IP
+		if net.ParseIP(currentValue) == nil {
+			if fu.Logger != nil {
+				fu.Logger.Warnf("Current IP value '%s' is not a valid IP format, but updating anyway", currentValue)
+			}
+		}
+
+		// Validate new IP
+		if net.ParseIP(newIP) == nil {
+			if fu.Logger != nil {
+				fu.Logger.Warnf("New IP value '%s' is not a valid IP format, but updating anyway", newIP)
+			}
+		}
+
+		return newIP
+	}
+}
+
+func (fu *FileUpdater) getNestedValue(data map[string]interface{}, keyPath string) (interface{}, error) {
+	keys := strings.Split(keyPath, "/")
+
+	current := data
+	for i, key := range keys[:len(keys)-1] {
+		next, ok := current[key].(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("invalid path at key %s (step %d)", key, i+1)
+		}
+		current = next
+	}
+
+	finalKey := keys[len(keys)-1]
+	value, exists := current[finalKey]
+	if !exists {
+		return nil, fmt.Errorf("key not found: %s", finalKey)
+	}
+
+	return value, nil
 }
 
 func (fu *FileUpdater) ValidateFile() error {

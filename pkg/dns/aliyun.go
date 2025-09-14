@@ -46,6 +46,12 @@ func (p *AliyunProvider) SetCredentials(accessKey, secretKey string) {
 	p.secretKey = secretKey
 }
 
+func (p *AliyunProvider) GetRecord(domain, recordName, recordType string) (string, error) {
+	// For now, return an error to indicate that record retrieval is not implemented
+	// This allows the update to proceed without comparison
+	return "", fmt.Errorf("GetRecord not implemented for Aliyun provider")
+}
+
 func (p *AliyunProvider) UpdateRecord(domain, recordName, recordType, newIP string, ttl int) error {
 	// First, get the record ID
 	recordId, err := p.getRecordId(domain, recordName, recordType)

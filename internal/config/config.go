@@ -70,7 +70,7 @@ func Load(configPath string) (*Config, error) {
 
 	// Set defaults
 	if config.CheckInterval == 0 {
-		config.CheckInterval = 300 // 5 minutes
+		config.CheckInterval = 600 // 10 minutes
 	}
 
 	if len(config.IPDetection.APIEndpoints) == 0 {
@@ -124,8 +124,8 @@ func createDefaultConfig(configPath string) error {
 
 	defaultConfig := `# IP-Updater Configuration File
 
-# Check interval in seconds (default: 300 = 5 minutes)
-check_interval = 300
+# Check interval in seconds (default: 600 = 10 minutes)
+check_interval = 600
 
 [ip_detection]
 # Timeout for IP detection requests in seconds

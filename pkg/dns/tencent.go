@@ -67,6 +67,12 @@ func (p *TencentDNSProvider) SetCredentials(accessKey, secretKey string) {
 	p.secretKey = secretKey
 }
 
+func (p *TencentDNSProvider) GetRecord(domain, recordName, recordType string) (string, error) {
+	// For now, return an error to indicate that record retrieval is not implemented
+	// This allows the update to proceed without comparison
+	return "", fmt.Errorf("GetRecord not implemented for Tencent provider")
+}
+
 func (p *TencentDNSProvider) UpdateRecord(domain, recordName, recordType, newIP string, ttl int) error {
 	recordId, err := p.getRecordId(domain, recordName, recordType)
 	if err != nil {

@@ -1,0 +1,64 @@
+# IP-Updater 部署指南
+
+## 编译完成
+
+✅ 已在Windows环境下成功交叉编译出Linux版本的可执行文件
+✅ 已实现PRD第4条的所有功能改进：
+  - 默认更新周期改为10分钟
+  - 更新前原值与新值对比（相同则跳过）
+  - IP格式检测和掩码保留功能
+  - 优化文件操作减少锁死时间（适合NFS环境）
+
+## 部署包内容
+
+- `ip_updater` - Linux AMD64可执行文件（约7MB）
+- `ip_updater.service` - systemd服务配置文件
+- `install.sh` - 自动安装脚本
+- `uninstall.sh` - 卸载脚本
+- `README.md` - 详细部署说明
+
+## 快速部署
+
+1. 将整个build目录复制到Linux服务器
+2. 在服务器上执行：
+   ```bash
+   sudo ./install.sh
+   ```
+3. 编辑配置文件：
+   ```bash
+   sudo vi /etc/ip_updater/config.conf
+   ```
+4. 启动服务：
+   ```bash
+   sudo systemctl enable ip_updater
+   sudo systemctl start ip_updater
+   ```
+
+## 功能说明
+
+### 新增改进功能
+- **智能更新**：更新前会检查当前值，相同则跳过更新
+- **IP格式验证**：自动检测IP格式，不合法时记录警告
+- **掩码保留**：自动保留CIDR掩码（如/24）
+- **原子写入**：使用临时文件+重命名，减少文件锁死时间
+- **10分钟检查**：默认检查间隔调整为10分钟
+
+### 支持的DNS提供商
+- 阿里云 DNS
+- 腾讯云 DNS
+- 华为云 DNS
+- Cloudflare DNS
+- GoDaddy DNS
+
+### 支持的配置文件格式
+- JSON (.json)
+- YAML (.yaml/.yml)
+- TOML (.toml)
+- INI (.ini)
+
+## 注意事项
+
+- 可执行文件已针对Linux AMD64编译
+- 服务以root权限运行
+- 日志文件位于：`/var/log/ip_updater/ip_updater.log`
+- 配置文件位于：`/etc/ip_updater/config.conf`

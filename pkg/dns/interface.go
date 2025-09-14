@@ -4,6 +4,7 @@ import "ip-updater/internal/config"
 
 type Provider interface {
 	UpdateRecord(domain, recordName, recordType, newIP string, ttl int) error
+	GetRecord(domain, recordName, recordType string) (string, error)
 	GetProviderName() string
 	SetCredentials(accessKey, secretKey string)
 }
@@ -34,6 +35,13 @@ func (dm *DNSManager) UpdateDNSRecord(updater config.DNSUpdater, ip string) erro
 	}
 
 	for _, record := range updater.Records {
+		// Get current record value for comparison
+		currentIP, err := provider.GetRecord(updater.Domain, record.Name, record.Type)
+		if err == nil && currentIP == ip {
+			// Current value matches new value, skip update
+			continue
+		}
+
 		if err := provider.UpdateRecord(updater.Domain, record.Name, record.Type, ip, record.TTL); err != nil {
 			return err
 		}

@@ -52,6 +52,12 @@ func (p *GoDaddyDNSProvider) SetCredentials(accessKey, secretKey string) {
 	p.apiSecret = secretKey
 }
 
+func (p *GoDaddyDNSProvider) GetRecord(domain, recordName, recordType string) (string, error) {
+	// For now, return an error to indicate that record retrieval is not implemented
+	// This allows the update to proceed without comparison
+	return "", fmt.Errorf("GetRecord not implemented for GoDaddy provider")
+}
+
 func (p *GoDaddyDNSProvider) UpdateRecord(domain, recordName, recordType, newIP string, ttl int) error {
 	// GoDaddy uses a different approach - we update all records of the same name/type at once
 	records := []GoDaddyRecord{

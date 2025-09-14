@@ -64,6 +64,12 @@ func (p *CloudflareDNSProvider) SetCredentials(accessKey, secretKey string) {
 	p.apiToken = accessKey
 }
 
+func (p *CloudflareDNSProvider) GetRecord(domain, recordName, recordType string) (string, error) {
+	// For now, return an error to indicate that record retrieval is not implemented
+	// This allows the update to proceed without comparison
+	return "", fmt.Errorf("GetRecord not implemented for Cloudflare provider")
+}
+
 func (p *CloudflareDNSProvider) UpdateRecord(domain, recordName, recordType, newIP string, ttl int) error {
 	zoneId, err := p.getZoneId(domain)
 	if err != nil {
