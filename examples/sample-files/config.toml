@@ -1,0 +1,27 @@
+# 应用配置文件示例
+
+[server]
+name = "my-application"
+port = 8080
+host = "localhost"
+
+[network]
+# 此字段将被IP-Updater自动更新
+external_address = "0.0.0.0"
+internal_address = "192.168.1.100"
+timeout = 30
+
+[database]
+host = "localhost"
+port = 3306
+name = "myapp"
+user = "root"
+
+[logging]
+level = "info"
+file = "/var/log/myapp.log"
+
+[features]
+ssl_enabled = true
+cache_enabled = false
+debug_mode = false

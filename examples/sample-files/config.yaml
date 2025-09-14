@@ -1,0 +1,23 @@
+version: '3.8'
+services:
+  webapp:
+    image: nginx:latest
+    ports:
+      - "80:80"
+    environment:
+      EXTERNAL_IP: "0.0.0.0"
+      INTERNAL_IP: "192.168.1.100"
+      SERVER_NAME: "myserver"
+    volumes:
+      - ./html:/usr/share/nginx/html
+
+  database:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: myapp
+
+networks:
+  default:
+    external_ip: "0.0.0.0"
+    subnet: "192.168.1.0/24"
