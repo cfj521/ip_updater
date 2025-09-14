@@ -57,6 +57,8 @@ func main() {
 	log.Info("IP-Updater started")
 	log.Infof("DNS check interval: %d minutes", cfg.DNSCheckInterval/60)
 	log.Infof("File check interval: %d minutes", cfg.FileCheckInterval/60)
+	log.Infof("Configured DNS updaters: %d", len(cfg.DNSUpdaters))
+	log.Infof("Configured file updaters: %d", len(cfg.FileUpdaters))
 
 	// 创建分离的定时器
 	dnsTicker := time.NewTicker(time.Duration(cfg.DNSCheckInterval) * time.Second)
@@ -68,22 +70,62 @@ func main() {
 	var dnsLastIP string
 	var fileLastIP string
 
+	// 启动时立即执行一次检测和更新
+	log.Info("执行启动时的立即检测...")
+
+	// DNS检测和更新
+	currentIP, err := ipDetector.GetPublicIP()
+	if err != nil {
+		log.ErrorHighlightf("获取公网IP失败(启动检测): %v", err)
+	} else {
+		log.Infof("当前公网IP: %s", currentIP)
+
+		if len(cfg.DNSUpdaters) > 0 {
+			if err := ipUpdater.UpdateDNS(currentIP); err != nil {
+				log.ErrorHighlightf("DNS更新失败(启动检测): %v", err)
+			} else {
+				log.Successf("DNS更新完成(启动检测)，新IP: %s", currentIP)
+				dnsLastIP = currentIP
+			}
+		} else {
+			log.Debugf("未配置DNS更新器，跳过DNS更新(启动检测)")
+			dnsLastIP = currentIP
+		}
+
+		if len(cfg.FileUpdaters) > 0 {
+			if err := ipUpdater.UpdateFiles(currentIP); err != nil {
+				log.ErrorHighlightf("文件更新失败(启动检测): %v", err)
+			} else {
+				log.Successf("文件更新完成(启动检测)，新IP: %s", currentIP)
+				fileLastIP = currentIP
+			}
+		} else {
+			log.Debugf("未配置文件更新器，跳过文件更新(启动检测)")
+			fileLastIP = currentIP
+		}
+	}
+
 	for {
 		select {
 		case <-dnsTicker.C:
 			currentIP, err := ipDetector.GetPublicIP()
 			if err != nil {
-				log.Errorf("Failed to get public IP for DNS update: %v", err)
+				log.ErrorHighlightf("获取公网IP失败(DNS检查): %v", err)
 				continue
 			}
 
 			if currentIP != dnsLastIP {
 				log.Infof("DNS check: IP changed from %s to %s", dnsLastIP, currentIP)
 
-				if err := ipUpdater.UpdateDNS(currentIP); err != nil {
-					log.Errorf("Failed to update DNS: %v", err)
+				if len(cfg.DNSUpdaters) > 0 {
+					if err := ipUpdater.UpdateDNS(currentIP); err != nil {
+						log.ErrorHighlightf("DNS更新失败: %v", err)
+					} else {
+						log.Successf("DNS更新完成，新IP: %s", currentIP)
+						dnsLastIP = currentIP
+					}
 				} else {
-					log.Infof("Successfully updated DNS to %s", currentIP)
+					log.Debugf("No DNS updaters configured, skipping DNS update")
 					dnsLastIP = currentIP
 				}
 			} else {
@@ -93,17 +135,22 @@ func main() {
 		case <-fileTicker.C:
 			currentIP, err := ipDetector.GetPublicIP()
 			if err != nil {
-				log.Errorf("Failed to get public IP for file update: %v", err)
+				log.ErrorHighlightf("获取公网IP失败(文件检查): %v", err)
 				continue
 			}
 
 			if currentIP != fileLastIP {
 				log.Infof("File check: IP changed from %s to %s", fileLastIP, currentIP)
 
-				if err := ipUpdater.UpdateFiles(currentIP); err != nil {
-					log.Errorf("Failed to update files: %v", err)
+				if len(cfg.FileUpdaters) > 0 {
+					if err := ipUpdater.UpdateFiles(currentIP); err != nil {
+						log.ErrorHighlightf("文件更新失败: %v", err)
+					} else {
+						log.Successf("文件更新完成，新IP: %s", currentIP)
+						fileLastIP = currentIP
+					}
 				} else {
-					log.Infof("Successfully updated files to %s", currentIP)
+					log.Debugf("No file updaters configured, skipping file update")
 					fileLastIP = currentIP
 				}
 			} else {

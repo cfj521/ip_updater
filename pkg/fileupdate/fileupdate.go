@@ -24,6 +24,7 @@ type FileUpdater struct {
 }
 
 type Logger interface {
+	Infof(format string, args ...interface{})
 	Warnf(format string, args ...interface{})
 }
 
@@ -41,16 +42,35 @@ func (fu *FileUpdater) SetLogger(logger Logger) {
 }
 
 func (fu *FileUpdater) UpdateIP(newIP string) error {
+	if fu.Logger != nil {
+		fu.Logger.Infof("📁 文件更新开始 - 文件: %s, 格式: %s, 键路径: %s", fu.FilePath, fu.Format, fu.KeyPath)
+	}
+
 	// Check current value first
 	currentValue, err := fu.GetCurrentValue()
 	if err == nil {
+		if fu.Logger != nil {
+			fu.Logger.Infof("✅ 获取到当前文件键值: %s:%s = '%s'", fu.FilePath, fu.KeyPath, currentValue)
+		}
+
 		// Process the new IP value considering current value's mask
 		processedIP := fu.processIPWithMask(currentValue, newIP)
 		if currentValue == processedIP {
-			// Current value matches new value, skip update
+			if fu.Logger != nil {
+				fu.Logger.Infof("✔️ 文件键值未变化，跳过更新: %s:%s = '%s'", fu.FilePath, fu.KeyPath, currentValue)
+			}
 			return nil
 		}
+
+		if fu.Logger != nil {
+			fu.Logger.Infof("📝 文件键值需要更新: %s:%s 从 '%s' 更新为 '%s'", fu.FilePath, fu.KeyPath, currentValue, processedIP)
+		}
 		newIP = processedIP
+	} else {
+		if fu.Logger != nil {
+			fu.Logger.Warnf("⚠️ 无法获取当前文件键值 %s:%s: %v", fu.FilePath, fu.KeyPath, err)
+			fu.Logger.Infof("🔄 尝试直接更新文件键值...")
+		}
 	}
 
 	// Create backup if enabled
@@ -60,18 +80,32 @@ func (fu *FileUpdater) UpdateIP(newIP string) error {
 		}
 	}
 
+	var updateErr error
 	switch strings.ToLower(fu.Format) {
 	case "json":
-		return fu.updateJSON(newIP)
+		updateErr = fu.updateJSON(newIP)
 	case "yaml", "yml":
-		return fu.updateYAML(newIP)
+		updateErr = fu.updateYAML(newIP)
 	case "toml":
-		return fu.updateTOML(newIP)
+		updateErr = fu.updateTOML(newIP)
 	case "ini":
-		return fu.updateINI(newIP)
+		updateErr = fu.updateINI(newIP)
 	default:
-		return fmt.Errorf("unsupported file format: %s", fu.Format)
+		updateErr = fmt.Errorf("unsupported file format: %s", fu.Format)
 	}
+
+	if updateErr != nil {
+		if fu.Logger != nil {
+			fu.Logger.Warnf("❌ 文件更新失败: %s:%s: %v", fu.FilePath, fu.KeyPath, updateErr)
+		}
+		return updateErr
+	}
+
+	if fu.Logger != nil {
+		fu.Logger.Infof("✅ 文件更新成功: %s:%s = '%s'", fu.FilePath, fu.KeyPath, newIP)
+	}
+
+	return nil
 }
 
 func (fu *FileUpdater) createBackup() error {

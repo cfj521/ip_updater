@@ -18,6 +18,7 @@ type Updater struct {
 
 func New(cfg *config.Config, log *logger.Logger) *Updater {
 	dnsManager := dns.NewDNSManager()
+	dnsManager.SetLogger(log)
 	dnsManager.InitializeProviders()
 
 	return &Updater{
@@ -48,16 +49,22 @@ func (u *Updater) UpdateAll(newIP string) error {
 }
 
 func (u *Updater) UpdateDNS(newIP string) error {
+	// Skip if no DNS updaters configured
+	if len(u.config.DNSUpdaters) == 0 {
+		u.logger.Debugf("No DNS updaters configured, skipping DNS update")
+		return nil
+	}
+
 	var errors []string
 
 	// Update DNS records
 	for _, dnsUpdater := range u.config.DNSUpdaters {
 		if err := u.updateDNSWithRetry(dnsUpdater, newIP); err != nil {
 			errMsg := fmt.Sprintf("DNS update failed for %s: %v", dnsUpdater.Name, err)
-			u.logger.Error(errMsg)
+			u.logger.ErrorHighlight(errMsg)
 			errors = append(errors, errMsg)
 		} else {
-			u.logger.Infof("Successfully updated DNS records for %s", dnsUpdater.Name)
+			u.logger.Successf("DNS记录更新成功: %s", dnsUpdater.Name)
 		}
 	}
 
@@ -69,16 +76,22 @@ func (u *Updater) UpdateDNS(newIP string) error {
 }
 
 func (u *Updater) UpdateFiles(newIP string) error {
+	// Skip if no file updaters configured
+	if len(u.config.FileUpdaters) == 0 {
+		u.logger.Debugf("No file updaters configured, skipping file update")
+		return nil
+	}
+
 	var errors []string
 
 	// Update configuration files
 	for _, fileUpdater := range u.config.FileUpdaters {
 		if err := u.updateFileWithRetry(fileUpdater, newIP); err != nil {
 			errMsg := fmt.Sprintf("File update failed for %s: %v", fileUpdater.Name, err)
-			u.logger.Error(errMsg)
+			u.logger.ErrorHighlight(errMsg)
 			errors = append(errors, errMsg)
 		} else {
-			u.logger.Infof("Successfully updated file %s", fileUpdater.Name)
+			u.logger.Successf("文件更新成功: %s", fileUpdater.Name)
 		}
 	}
 
@@ -97,7 +110,7 @@ func (u *Updater) updateDNSWithRetry(dnsUpdater config.DNSUpdater, newIP string)
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		if attempt > 0 {
-			u.logger.Warnf("Retrying DNS update for %s (attempt %d)", dnsUpdater.Name, attempt+1)
+			u.logger.WarnHighlightf("重试DNS更新 %s (第%d次尝试)", dnsUpdater.Name, attempt+1)
 			time.Sleep(time.Duration(u.config.Retry.Interval) * time.Second)
 		}
 
@@ -106,7 +119,7 @@ func (u *Updater) updateDNSWithRetry(dnsUpdater config.DNSUpdater, newIP string)
 			return nil
 		}
 
-		u.logger.Errorf("DNS update attempt %d failed for %s: %v", attempt+1, dnsUpdater.Name, err)
+		u.logger.ErrorHighlightf("DNS update attempt %d failed for %s: %v", attempt+1, dnsUpdater.Name, err)
 
 		// Don't retry on certain errors
 		if isNonRetryableError(err) {
@@ -138,7 +151,7 @@ func (u *Updater) updateFileWithRetry(fileUpdater config.FileUpdater, newIP stri
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		if attempt > 0 {
-			u.logger.Warnf("Retrying file update for %s (attempt %d)", fileUpdater.Name, attempt+1)
+			u.logger.WarnHighlightf("重试文件更新 %s (第%d次尝试)", fileUpdater.Name, attempt+1)
 			time.Sleep(time.Duration(u.config.Retry.Interval) * time.Second)
 		}
 
@@ -147,7 +160,7 @@ func (u *Updater) updateFileWithRetry(fileUpdater config.FileUpdater, newIP stri
 			return nil
 		}
 
-		u.logger.Errorf("File update attempt %d failed for %s: %v", attempt+1, fileUpdater.Name, err)
+		u.logger.ErrorHighlightf("File update attempt %d failed for %s: %v", attempt+1, fileUpdater.Name, err)
 
 		// Don't retry on certain errors
 		if isNonRetryableError(err) {
