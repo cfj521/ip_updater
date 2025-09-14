@@ -17,8 +17,8 @@
 ## 项目结构
 
 ```
-ip-updater/
-├── cmd/ip-updater/          # 主程序入口
+ip_updater/
+├── cmd/ip_updater/          # 主程序入口
 │   └── main.go
 ├── internal/                # 内部包
 │   ├── config/              # 配置管理
@@ -54,8 +54,8 @@ chmod +x build.sh
 ```
 
 编译完成后，在`build/`目录下会生成：
-- `ip-updater` - 主程序
-- `ip-updater.service` - systemd服务文件
+- `ip_updater` - 主程序
+- `ip_updater.service` - systemd服务文件
 - `install.sh` - 安装脚本
 - `uninstall.sh` - 卸载脚本
 - `README.md` - 部署说明
@@ -82,8 +82,8 @@ sudo nano /etc/ip_updater/config.conf
 ### 4. 启动服务
 
 ```bash
-sudo systemctl enable ip-updater
-sudo systemctl start ip-updater
+sudo systemctl enable ip_updater
+sudo systemctl start ip_updater
 ```
 
 ## 配置说明
@@ -146,13 +146,13 @@ backup = true
 
 ### 查看服务状态
 ```bash
-sudo systemctl status ip-updater
+sudo systemctl status ip_updater
 ```
 
 ### 查看日志
 ```bash
 # 实时日志
-sudo journalctl -u ip-updater -f
+sudo journalctl -u ip_updater -f
 
 # 日志文件
 sudo tail -f /var/log/ip_updater/ip_updater.log
@@ -160,7 +160,7 @@ sudo tail -f /var/log/ip_updater/ip_updater.log
 
 ### 重启服务
 ```bash
-sudo systemctl restart ip-updater
+sudo systemctl restart ip_updater
 ```
 
 ## 安全特性
@@ -202,7 +202,7 @@ sudo systemctl restart ip-updater
 1. **服务启动失败**
    - 检查配置文件语法
    - 确认日志目录权限
-   - 查看系统日志：`journalctl -u ip-updater`
+   - 查看系统日志：`journalctl -u ip_updater`
 
 2. **IP检测失败**
    - 检查网络连接

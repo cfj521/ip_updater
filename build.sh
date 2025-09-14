@@ -15,7 +15,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Build configuration
-BINARY_NAME="ip-updater"
+BINARY_NAME="ip_updater"
 BUILD_DIR="build"
 VERSION="1.0.0"
 BUILD_TIME=$(date -u '+%Y-%m-%d_%H:%M:%S')
@@ -51,7 +51,7 @@ echo -e "${YELLOW}Building for Linux AMD64...${NC}"
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -ldflags="${LDFLAGS}" \
     -o ${BUILD_DIR}/${BINARY_NAME} \
-    ./cmd/ip-updater
+    ./cmd/ip_updater
 
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}✓ Build successful!${NC}"
@@ -62,7 +62,7 @@ fi
 
 # Create systemd service file
 echo -e "${YELLOW}Creating systemd service file...${NC}"
-cat > ${BUILD_DIR}/ip-updater.service << EOF
+cat > ${BUILD_DIR}/ip_updater.service << EOF
 [Unit]
 Description=IP Updater Service
 After=network.target
@@ -70,7 +70,7 @@ After=network.target
 [Service]
 Type=simple
 User=root
-ExecStart=/usr/local/bin/ip-updater -config=/etc/ip_updater/config.conf
+ExecStart=/usr/local/bin/ip_updater -config=/etc/ip_updater/config.conf
 Restart=always
 RestartSec=10
 KillMode=process
@@ -86,11 +86,11 @@ cat > ${BUILD_DIR}/install.sh << 'EOF'
 
 set -e
 
-BINARY_NAME="ip-updater"
+BINARY_NAME="ip_updater"
 INSTALL_DIR="/usr/local/bin"
 CONFIG_DIR="/etc/ip_updater"
 LOG_DIR="/var/log/ip_updater"
-SERVICE_FILE="ip-updater.service"
+SERVICE_FILE="ip_updater.service"
 
 echo "Installing IP-Updater..."
 
@@ -101,9 +101,9 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 # Stop service if running
-if systemctl is-active --quiet ip-updater; then
+if systemctl is-active --quiet ip_updater; then
     echo "Stopping existing service..."
-    systemctl stop ip-updater
+    systemctl stop ip_updater
 fi
 
 # Install binary
@@ -132,14 +132,14 @@ fi
 echo "Installation complete!"
 echo ""
 echo "To enable and start the service:"
-echo "  sudo systemctl enable ip-updater"
-echo "  sudo systemctl start ip-updater"
+echo "  sudo systemctl enable ip_updater"
+echo "  sudo systemctl start ip_updater"
 echo ""
 echo "To check service status:"
-echo "  sudo systemctl status ip-updater"
+echo "  sudo systemctl status ip_updater"
 echo ""
 echo "To view logs:"
-echo "  sudo journalctl -u ip-updater -f"
+echo "  sudo journalctl -u ip_updater -f"
 echo ""
 echo "Configuration file: ${CONFIG_DIR}/config.conf"
 echo "Log file: ${LOG_DIR}/ip_updater.log"
@@ -154,9 +154,9 @@ cat > ${BUILD_DIR}/uninstall.sh << 'EOF'
 
 set -e
 
-BINARY_NAME="ip-updater"
+BINARY_NAME="ip_updater"
 INSTALL_DIR="/usr/local/bin"
-SERVICE_FILE="/etc/systemd/system/ip-updater.service"
+SERVICE_FILE="/etc/systemd/system/ip_updater.service"
 
 echo "Uninstalling IP-Updater..."
 
@@ -167,14 +167,14 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 # Stop and disable service
-if systemctl is-active --quiet ip-updater; then
+if systemctl is-active --quiet ip_updater; then
     echo "Stopping service..."
-    systemctl stop ip-updater
+    systemctl stop ip_updater
 fi
 
-if systemctl is-enabled --quiet ip-updater; then
+if systemctl is-enabled --quiet ip_updater; then
     echo "Disabling service..."
-    systemctl disable ip-updater
+    systemctl disable ip_updater
 fi
 
 # Remove service file
@@ -268,7 +268,7 @@ echo ""
 echo "Build artifacts created in: ${BUILD_DIR}/"
 echo "Files:"
 echo "  ${BINARY_NAME}           - Main executable"
-echo "  ip-updater.service      - Systemd service file"
+echo "  ip_updater.service      - Systemd service file"
 echo "  install.sh              - Installation script"
 echo "  uninstall.sh            - Uninstallation script"
 echo "  README.md               - Deployment guide"
@@ -281,6 +281,6 @@ echo -e "${YELLOW}Next steps:${NC}"
 echo "1. Copy the build directory to your target server"
 echo "2. Run './install.sh' as root on the target server"
 echo "3. Configure /etc/ip_updater/config.conf"
-echo "4. Start the service: systemctl start ip-updater"
+echo "4. Start the service: systemctl start ip_updater"
 echo ""
 echo -e "${GREEN}Happy deploying! 🚀${NC}"
