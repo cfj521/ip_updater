@@ -47,9 +47,54 @@ func (p *AliyunProvider) SetCredentials(accessKey, secretKey string) {
 }
 
 func (p *AliyunProvider) GetRecord(domain, recordName, recordType string) (string, error) {
-	// For now, return an error to indicate that record retrieval is not implemented
-	// This allows the update to proceed without comparison
-	return "", fmt.Errorf("GetRecord not implemented for Aliyun provider")
+	params := map[string]string{
+		"Action":        "DescribeDomainRecords",
+		"DomainName":    domain,
+		"RRKeyWord":     recordName,
+		"Type":          recordType,
+		"Format":        "JSON",
+		"Version":       "2015-01-09",
+		"AccessKeyId":   p.accessKey,
+		"SignatureMethod": "HMAC-SHA1",
+		"Timestamp":     time.Now().UTC().Format("2006-01-02T15:04:05Z"),
+		"SignatureVersion": "1.0",
+		"SignatureNonce": fmt.Sprintf("%d", time.Now().UnixNano()),
+	}
+
+	signature := p.generateSignature("POST", params)
+	params["Signature"] = signature
+
+	resp, err := p.makeRequest("POST", params)
+	if err != nil {
+		return "", err
+	}
+
+	if resp.Code != "" && resp.Code != "Success" {
+		return "", fmt.Errorf("aliyun API error: %s - %s", resp.Code, resp.Message)
+	}
+
+	// Extract record value from response
+	domainRecords, ok := resp.Data["DomainRecords"].(map[string]interface{})
+	if !ok {
+		return "", ErrRecordNotFound
+	}
+
+	records, ok := domainRecords["Record"].([]interface{})
+	if !ok || len(records) == 0 {
+		return "", ErrRecordNotFound
+	}
+
+	record, ok := records[0].(map[string]interface{})
+	if !ok {
+		return "", ErrRecordNotFound
+	}
+
+	recordValue, ok := record["Value"].(string)
+	if !ok {
+		return "", fmt.Errorf("failed to get record value")
+	}
+
+	return recordValue, nil
 }
 
 func (p *AliyunProvider) UpdateRecord(domain, recordName, recordType, newIP string, ttl int) error {

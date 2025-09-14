@@ -65,9 +65,44 @@ func (p *CloudflareDNSProvider) SetCredentials(accessKey, secretKey string) {
 }
 
 func (p *CloudflareDNSProvider) GetRecord(domain, recordName, recordType string) (string, error) {
-	// For now, return an error to indicate that record retrieval is not implemented
-	// This allows the update to proceed without comparison
-	return "", fmt.Errorf("GetRecord not implemented for Cloudflare provider")
+	zoneId, err := p.getZoneId(domain)
+	if err != nil {
+		return "", err
+	}
+
+	fullRecordName := p.getFullRecordName(recordName, domain)
+	url := fmt.Sprintf("/zones/%s/dns_records?name=%s&type=%s", zoneId, fullRecordName, recordType)
+
+	body, err := p.makeRequest("GET", url, nil)
+	if err != nil {
+		return "", err
+	}
+
+	var response CloudflareResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return "", fmt.Errorf("failed to parse records response: %v", err)
+	}
+
+	if !response.Success {
+		return "", p.formatCloudflareErrors(response.Errors)
+	}
+
+	records, ok := response.Result.([]interface{})
+	if !ok || len(records) == 0 {
+		return "", ErrRecordNotFound
+	}
+
+	recordData, ok := records[0].(map[string]interface{})
+	if !ok {
+		return "", fmt.Errorf("invalid record data format")
+	}
+
+	content, ok := recordData["content"].(string)
+	if !ok {
+		return "", fmt.Errorf("record content not found")
+	}
+
+	return content, nil
 }
 
 func (p *CloudflareDNSProvider) UpdateRecord(domain, recordName, recordType, newIP string, ttl int) error {

@@ -65,9 +65,36 @@ func (p *HuaweiDNSProvider) SetCredentials(accessKey, secretKey string) {
 }
 
 func (p *HuaweiDNSProvider) GetRecord(domain, recordName, recordType string) (string, error) {
-	// For now, return an error to indicate that record retrieval is not implemented
-	// This allows the update to proceed without comparison
-	return "", fmt.Errorf("GetRecord not implemented for Huawei provider")
+	zoneId, err := p.getZoneId(domain)
+	if err != nil {
+		return "", err
+	}
+
+	fullRecordName := recordName + "." + domain + "."
+	if recordName == "@" || recordName == "" {
+		fullRecordName = domain + "."
+	}
+
+	url := fmt.Sprintf("/v2/zones/%s/recordsets", zoneId)
+	body, err := p.makeRequest("GET", url, "")
+	if err != nil {
+		return "", err
+	}
+
+	var recordsetList HuaweiRecordSetList
+	if err := json.Unmarshal(body, &recordsetList); err != nil {
+		return "", fmt.Errorf("failed to parse recordsets response: %v", err)
+	}
+
+	for _, recordset := range recordsetList.Recordsets {
+		if recordset.Name == fullRecordName && recordset.Type == recordType {
+			if len(recordset.Records) > 0 {
+				return recordset.Records[0], nil
+			}
+		}
+	}
+
+	return "", ErrRecordNotFound
 }
 
 func (p *HuaweiDNSProvider) UpdateRecord(domain, recordName, recordType, newIP string, ttl int) error {

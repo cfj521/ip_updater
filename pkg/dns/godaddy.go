@@ -53,9 +53,11 @@ func (p *GoDaddyDNSProvider) SetCredentials(accessKey, secretKey string) {
 }
 
 func (p *GoDaddyDNSProvider) GetRecord(domain, recordName, recordType string) (string, error) {
-	// For now, return an error to indicate that record retrieval is not implemented
-	// This allows the update to proceed without comparison
-	return "", fmt.Errorf("GetRecord not implemented for GoDaddy provider")
+	record, err := p.getRecord(domain, recordName, recordType)
+	if err != nil {
+		return "", err
+	}
+	return record.Data, nil
 }
 
 func (p *GoDaddyDNSProvider) UpdateRecord(domain, recordName, recordType, newIP string, ttl int) error {
