@@ -47,6 +47,11 @@ func (p *AliyunProvider) SetCredentials(accessKey, secretKey string) {
 }
 
 func (p *AliyunProvider) GetRecord(domain, recordName, recordType string) (string, error) {
+	if p.accessKey == "" || p.secretKey == "" {
+		return "", fmt.Errorf("阿里云凭证未设置 (AccessKey: %s, SecretKey: %s)",
+			maskCredential(p.accessKey), maskCredential(p.secretKey))
+	}
+
 	params := map[string]string{
 		"Action":        "DescribeDomainRecords",
 		"DomainName":    domain,
@@ -213,6 +218,16 @@ func (p *AliyunProvider) generateSignature(method string, params map[string]stri
 	signature := base64.StdEncoding.EncodeToString(h.Sum(nil))
 
 	return signature
+}
+
+func maskCredential(credential string) string {
+	if len(credential) <= 8 {
+		if len(credential) < 2 {
+			return "***"
+		}
+		return "***" + credential[len(credential)-2:]
+	}
+	return credential[:4] + "***" + credential[len(credential)-4:]
 }
 
 func (p *AliyunProvider) makeRequest(method string, params map[string]string) (*AliyunResponse, error) {

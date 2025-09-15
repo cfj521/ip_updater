@@ -1,6 +1,7 @@
 [Unit]
 Description=IP Updater Service
-After=network.target
+After=network.target network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
@@ -8,7 +9,20 @@ User=root
 ExecStart=/usr/local/bin/ip_updater -config=/etc/ip_updater/config.conf
 Restart=always
 RestartSec=10
-KillMode=process
+
+# 超时设置
+TimeoutStartSec=60
+TimeoutStopSec=30
+TimeoutSec=90
+
+# 信号处理优化
+KillMode=mixed
+KillSignal=SIGTERM
+SendSIGKILL=yes
+
+# 服务限制
+LimitNOFILE=1024
+MemoryMax=100M
 
 [Install]
 WantedBy=multi-user.target
