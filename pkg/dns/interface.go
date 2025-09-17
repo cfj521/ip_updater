@@ -69,51 +69,61 @@ func (dm *DNSManager) UpdateDNSRecord(updater config.DNSUpdater, ip string) erro
 		dm.logger.Infof("📋 DNS查询开始 - 提供商: %s, 域名: %s", updater.Provider, updater.Domain)
 	}
 
+	// 优化：对同一域名只查询一次DNS记录
+	if dm.logger != nil {
+		dm.logger.Infof("📡 获取域名 %s 的所有DNS记录...", updater.Domain)
+	}
+
+	records, err := provider.GetRecords(updater.Domain)
+	var recordsMap map[string]string // key: "name/type", value: current IP
+
+	if err != nil {
+		if dm.logger != nil {
+			dm.logger.Warnf("⚠️ 无法获取DNS记录列表 %s: %v", updater.Domain, err)
+			dm.logger.Infof("🔄 将对所有记录尝试直接更新...")
+		}
+		recordsMap = make(map[string]string) // 空映射，所有记录都将被视为新记录
+	} else {
+		if dm.logger != nil {
+			dm.logger.Infof("✅ 成功获取到 %d 条DNS记录", len(records))
+		}
+
+		// 构建记录映射表，便于快速查找
+		recordsMap = make(map[string]string)
+		for _, rec := range records {
+			key := rec.Name + "/" + rec.Type
+			recordsMap[key] = rec.Value
+		}
+	}
+
+	// 处理每个配置的记录
 	for _, record := range updater.Records {
 		recordKey := updater.Domain + "/" + record.Name + "/" + record.Type
 
 		if dm.logger != nil {
-			dm.logger.Infof("🔍 查询DNS记录: %s (类型: %s)", recordKey, record.Type)
+			dm.logger.Infof("🔍 处理DNS记录: %s (类型: %s)", recordKey, record.Type)
 		}
 
-		// Get current record value for comparison
-		records, err := provider.GetRecords(updater.Domain)
-		if err != nil {
+		// 在已获取的记录中查找匹配项
+		lookupKey := record.Name + "/" + record.Type
+		if currentIP, found := recordsMap[lookupKey]; found {
 			if dm.logger != nil {
-				dm.logger.Warnf("⚠️ 无法获取DNS记录列表 %s: %v", updater.Domain, err)
-				dm.logger.Infof("🔄 尝试直接更新DNS记录...")
+				dm.logger.Infof("✅ 找到现有DNS记录: %s = '%s'", recordKey, currentIP)
+			}
+
+			if currentIP == ip {
+				if dm.logger != nil {
+					dm.logger.Infof("✔️ DNS记录值未变化，跳过更新: %s = '%s'", recordKey, currentIP)
+				}
+				continue
+			}
+
+			if dm.logger != nil {
+				dm.logger.Infof("📝 DNS记录值需要更新: %s 从 '%s' 更新为 '%s'", recordKey, currentIP, ip)
 			}
 		} else {
-			// Find the matching record
-			var currentIP string
-			var found bool
-			for _, rec := range records {
-				if rec.Name == record.Name && rec.Type == record.Type {
-					currentIP = rec.Value
-					found = true
-					break
-				}
-			}
-
-			if found {
-				if dm.logger != nil {
-					dm.logger.Infof("✅ 获取到当前DNS记录值: %s = '%s'", recordKey, currentIP)
-				}
-
-				if currentIP == ip {
-					if dm.logger != nil {
-						dm.logger.Infof("✔️ DNS记录值未变化，跳过更新: %s = '%s'", recordKey, currentIP)
-					}
-					continue
-				}
-
-				if dm.logger != nil {
-					dm.logger.Infof("📝 DNS记录值需要更新: %s 从 '%s' 更新为 '%s'", recordKey, currentIP, ip)
-				}
-			} else {
-				if dm.logger != nil {
-					dm.logger.Infof("🆕 未找到现有DNS记录，将创建新记录: %s", recordKey)
-				}
+			if dm.logger != nil {
+				dm.logger.Infof("🆕 未找到现有DNS记录，将创建新记录: %s", recordKey)
 			}
 		}
 

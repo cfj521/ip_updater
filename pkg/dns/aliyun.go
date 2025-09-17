@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -70,22 +71,28 @@ func (p *AliyunProvider) GetRecords(domain string) ([]DNSRecord, error) {
 	params["DomainName"] = domain
 	params["PageSize"] = defaultPageSize
 
-	// Debug mode can be enabled by setting environment variable
-	// fmt.Printf("📤 API请求参数 (域名: %s, 操作: %s)\n", domain, params["Action"])
+	// Debug: Add error context for troubleshooting
+	if os.Getenv("DNS_DEBUG") == "1" {
+		fmt.Printf("📤 GetRecords API请求 (域名: %s)\n", domain)
+	}
 
 	signature := p.generateSignature("GET", params)
 	params["Signature"] = signature
 
 	resp, err := p.makeRequest("GET", params)
 	if err != nil {
-		return nil, err
+		// Add more context to the error
+		return nil, fmt.Errorf("GetRecords API调用失败 (域名: %s): %v", domain, err)
 	}
 
-	// Debug: Uncomment for detailed API response debugging
-	// fmt.Printf("🔍 阿里云API响应 (域名: %s, 记录数: %d)\n", domain, resp.TotalCount)
+	// Debug: Show API response details in debug mode
+	if os.Getenv("DNS_DEBUG") == "1" {
+		fmt.Printf("🔍 GetRecords API响应 (域名: %s, 状态: %s, 记录数: %d)\n",
+			domain, resp.Code, resp.TotalCount)
+	}
 
 	if resp.Code != "" && resp.Code != "Success" {
-		return nil, fmt.Errorf("aliyun API error: %s - %s", resp.Code, resp.Message)
+		return nil, fmt.Errorf("aliyun API error (GetRecords): %s - %s", resp.Code, resp.Message)
 	}
 
 	// Check response structure
