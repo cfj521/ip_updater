@@ -8,7 +8,8 @@
       "Bash(\"C:\\Program Files\\Go\\bin\\go.exe\" mod download)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(sed:*)"
     ],
     "deny": [],
     "ask": []

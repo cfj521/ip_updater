@@ -5,22 +5,30 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [未发布]
+## [1.1.10] - 2025-01-17
 
 ### 新增
 - 重构DNS提供商接口，将`GetRecord`和`ListRecords`合并为统一的`GetRecords`方法
 - 优化阿里云DNS提供商实现，修正API响应解析问题
 - 增强错误处理和RecordId类型兼容性
+- 基于Context的优雅服务终止机制
 
 ### 改进
 - 清理调试代码，提供生产环境友好的输出
 - 统一DNS记录获取逻辑，在DNSManager中本地查找指定记录
 - 标记其他DNS供应商状态为"待验证"，等待后续测试完善
+- 优化DNS查询性能：同一域名多条记录从N次API调用优化为1次API调用
+- 服务关闭时间从25秒优化到5秒，支持强制退出
 
 ### 修复
 - 修正阿里云DNS API响应结构解析错误
 - 修复RecordId字段类型处理，支持字符串和数字格式
 - 改进JSON解析错误处理
+
+### 技术改进
+- 采用Context取消机制替代传统信号处理
+- 启动日志显示版本信息
+- 5秒超时后自动强制退出(os.Exit(0))
 
 ### 计划中
 - 完善其他DNS提供商的GetRecords实现

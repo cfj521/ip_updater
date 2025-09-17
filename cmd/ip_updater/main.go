@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -22,7 +23,7 @@ var (
 	testDNS    = flag.Bool("test-dns", false, "Test DNS provider credentials and connectivity")
 )
 
-var Version = "1.1.0-dev" // Will be overridden by build script
+var Version = "1.1.10" // Will be overridden by build script
 
 func main() {
 	flag.Parse()
@@ -57,11 +58,15 @@ func main() {
 	// Initialize updater
 	ipUpdater := updater.New(cfg, log)
 
+	// Create context for graceful shutdown
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	// Set up signal handling for graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 
-	log.Info("IP-Updater started")
+	log.Infof("IP-Updater v%s started", Version)
 	log.Infof("DNS check interval: %d minutes", cfg.DNSCheckInterval/60)
 	log.Infof("File check interval: %d minutes", cfg.FileCheckInterval/60)
 	log.Infof("Configured DNS updaters: %d", len(cfg.DNSUpdaters))
@@ -77,8 +82,12 @@ func main() {
 	var dnsLastIP string
 	var fileLastIP string
 
-	// 创建用于优雅退出的通道
-	done := make(chan bool, 1)
+	// Start shutdown handler in separate goroutine
+	go func() {
+		sig := <-sigChan
+		log.Infof("收到信号 %v，开始优雅关闭...", sig)
+		cancel() // Cancel context to trigger graceful shutdown
+	}()
 
 	// 启动时立即执行一次检测和更新
 	log.Info("执行启动时的立即检测...")
@@ -115,8 +124,26 @@ func main() {
 		}
 	}
 
+	// 启动强制退出定时器
+	forceExitTimer := time.AfterFunc(5*time.Second, func() {
+		log.WarnHighlight("优雅关闭超时(5秒)，强制退出")
+		os.Exit(0)
+	})
+	forceExitTimer.Stop() // 先停止，等收到取消信号后再启动
+
 	for {
 		select {
+		case <-ctx.Done():
+			log.Info("收到关闭信号，停止定时器...")
+			dnsTicker.Stop()
+			fileTicker.Stop()
+
+			// 启动强制退出定时器
+			forceExitTimer.Reset(5 * time.Second)
+
+			log.Info("优雅关闭完成")
+			return
+
 		case <-dnsTicker.C:
 			currentIP, err := ipDetector.GetPublicIP()
 			if err != nil {
@@ -167,30 +194,6 @@ func main() {
 				log.Debugf("File check: IP unchanged (%s)", currentIP)
 			}
 
-		case sig := <-sigChan:
-			log.Infof("收到信号 %v，开始优雅关闭...", sig)
-
-			// 停止定时器
-			log.Info("停止定时器...")
-			dnsTicker.Stop()
-			fileTicker.Stop()
-
-			// 设置退出超时
-			shutdownTimeout := time.AfterFunc(25*time.Second, func() {
-				log.WarnHighlight("关闭超时，强制退出")
-				os.Exit(1)
-			})
-
-			// 通知主循环退出
-			select {
-			case done <- true:
-				log.Info("优雅关闭完成")
-			case <-time.After(2*time.Second):
-				log.WarnHighlight("关闭信号发送超时")
-			}
-
-			shutdownTimeout.Stop()
-			return
 		}
 	}
 }
