@@ -16,9 +16,9 @@ type CloudflareDNSProvider struct {
 }
 
 type CloudflareResponse struct {
-	Success bool                `json:"success"`
-	Errors  []CloudflareError   `json:"errors"`
-	Result  interface{}         `json:"result"`
+	Success bool              `json:"success"`
+	Errors  []CloudflareError `json:"errors"`
+	Result  interface{}       `json:"result"`
 }
 
 type CloudflareError struct {
@@ -56,53 +56,17 @@ func NewCloudflareProvider() *CloudflareDNSProvider {
 	}
 }
 
+func (p *CloudflareDNSProvider) GetRecords(domain string) ([]DNSRecord, error) {
+	// TODO: 待验证 - Cloudflare DNS记录获取功能需要验证和完善
+	return []DNSRecord{}, fmt.Errorf("Cloudflare GetRecords功能待验证 - 需要测试API调用")
+}
+
 func (p *CloudflareDNSProvider) GetProviderName() string {
 	return "cloudflare"
 }
 
 func (p *CloudflareDNSProvider) SetCredentials(accessKey, secretKey string) {
 	p.apiToken = accessKey
-}
-
-func (p *CloudflareDNSProvider) GetRecord(domain, recordName, recordType string) (string, error) {
-	zoneId, err := p.getZoneId(domain)
-	if err != nil {
-		return "", err
-	}
-
-	fullRecordName := p.getFullRecordName(recordName, domain)
-	url := fmt.Sprintf("/zones/%s/dns_records?name=%s&type=%s", zoneId, fullRecordName, recordType)
-
-	body, err := p.makeRequest("GET", url, nil)
-	if err != nil {
-		return "", err
-	}
-
-	var response CloudflareResponse
-	if err := json.Unmarshal(body, &response); err != nil {
-		return "", fmt.Errorf("failed to parse records response: %v", err)
-	}
-
-	if !response.Success {
-		return "", p.formatCloudflareErrors(response.Errors)
-	}
-
-	records, ok := response.Result.([]interface{})
-	if !ok || len(records) == 0 {
-		return "", ErrRecordNotFound
-	}
-
-	recordData, ok := records[0].(map[string]interface{})
-	if !ok {
-		return "", fmt.Errorf("invalid record data format")
-	}
-
-	content, ok := recordData["content"].(string)
-	if !ok {
-		return "", fmt.Errorf("record content not found")
-	}
-
-	return content, nil
 }
 
 func (p *CloudflareDNSProvider) UpdateRecord(domain, recordName, recordType, newIP string, ttl int) error {

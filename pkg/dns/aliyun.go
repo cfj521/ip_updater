@@ -5,6 +5,7 @@ import (
 	"crypto/sha1"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,6 +13,15 @@ import (
 	"sort"
 	"strings"
 	"time"
+)
+
+const (
+	aliyunEndpoint         = "https://alidns.aliyuncs.com"
+	aliyunAPIVersion       = "2015-01-09"
+	aliyunSignatureMethod  = "HMAC-SHA1"
+	aliyunSignatureVersion = "1.0"
+	defaultPageSize        = "500"
+	timeFormat             = "2006-01-02T15:04:05Z"
 )
 
 type AliyunProvider struct {
@@ -22,15 +32,18 @@ type AliyunProvider struct {
 }
 
 type AliyunResponse struct {
-	RequestId string                 `json:"RequestId"`
-	Code      string                 `json:"Code"`
-	Message   string                 `json:"Message"`
-	Data      map[string]interface{} `json:"Data"`
+	RequestId     string                 `json:"RequestId"`
+	Code          string                 `json:"Code"`
+	Message       string                 `json:"Message"`
+	TotalCount    int                    `json:"TotalCount"`
+	PageSize      int                    `json:"PageSize"`
+	PageNumber    int                    `json:"PageNumber"`
+	DomainRecords map[string]interface{} `json:"DomainRecords"`
 }
 
 func NewAliyunProvider() *AliyunProvider {
 	return &AliyunProvider{
-		endpoint: "https://alidns.aliyuncs.com",
+		endpoint: aliyunEndpoint,
 		client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -46,85 +59,92 @@ func (p *AliyunProvider) SetCredentials(accessKey, secretKey string) {
 	p.secretKey = secretKey
 }
 
-func (p *AliyunProvider) GetRecord(domain, recordName, recordType string) (string, error) {
+func (p *AliyunProvider) GetRecords(domain string) ([]DNSRecord, error) {
 	if p.accessKey == "" || p.secretKey == "" {
-		return "", fmt.Errorf("阿里云凭证未设置 (AccessKey: %s, SecretKey: %s)",
+		return nil, fmt.Errorf("阿里云凭证未设置 (AccessKey: %s, SecretKey: %s)",
 			maskCredential(p.accessKey), maskCredential(p.secretKey))
 	}
 
-	params := map[string]string{
-		"Action":        "DescribeDomainRecords",
-		"DomainName":    domain,
-		"RRKeyWord":     recordName,
-		"Type":          recordType,
-		"Format":        "JSON",
-		"Version":       "2015-01-09",
-		"AccessKeyId":   p.accessKey,
-		"SignatureMethod": "HMAC-SHA1",
-		"Timestamp":     time.Now().UTC().Format("2006-01-02T15:04:05Z"),
-		"SignatureVersion": "1.0",
-		"SignatureNonce": fmt.Sprintf("%d", time.Now().UnixNano()),
-	}
+	params := p.buildBaseParams()
+	params["Action"] = "DescribeDomainRecords"
+	params["DomainName"] = domain
+	params["PageSize"] = defaultPageSize
 
-	signature := p.generateSignature("POST", params)
+	// Debug mode can be enabled by setting environment variable
+	// fmt.Printf("📤 API请求参数 (域名: %s, 操作: %s)\n", domain, params["Action"])
+
+	signature := p.generateSignature("GET", params)
 	params["Signature"] = signature
 
-	resp, err := p.makeRequest("POST", params)
+	resp, err := p.makeRequest("GET", params)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
+
+	// Debug: Uncomment for detailed API response debugging
+	// fmt.Printf("🔍 阿里云API响应 (域名: %s, 记录数: %d)\n", domain, resp.TotalCount)
 
 	if resp.Code != "" && resp.Code != "Success" {
-		return "", fmt.Errorf("aliyun API error: %s - %s", resp.Code, resp.Message)
+		return nil, fmt.Errorf("aliyun API error: %s - %s", resp.Code, resp.Message)
 	}
 
-	// Extract record value from response
-	domainRecords, ok := resp.Data["DomainRecords"].(map[string]interface{})
+	// Check response structure
+	if resp.DomainRecords == nil {
+		return []DNSRecord{}, nil // No records found
+	}
+
+	// Extract records from response
+	recordList, ok := resp.DomainRecords["Record"].([]interface{})
 	if !ok {
-		return "", ErrRecordNotFound
+		return []DNSRecord{}, nil
 	}
 
-	records, ok := domainRecords["Record"].([]interface{})
-	if !ok || len(records) == 0 {
-		return "", ErrRecordNotFound
+	var records []DNSRecord
+	for _, item := range recordList {
+		record, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		name, _ := record["RR"].(string)
+		recordType, _ := record["Type"].(string)
+		value, _ := record["Value"].(string)
+		ttlFloat, _ := record["TTL"].(float64)
+		ttl := int(ttlFloat)
+
+		records = append(records, DNSRecord{
+			Name:  name,
+			Type:  recordType,
+			Value: value,
+			TTL:   ttl,
+		})
 	}
 
-	record, ok := records[0].(map[string]interface{})
-	if !ok {
-		return "", ErrRecordNotFound
-	}
+	// Debug: Uncomment to see parsed records
+	// fmt.Printf("📋 解析到 %d 条DNS记录\n", len(records))
 
-	recordValue, ok := record["Value"].(string)
-	if !ok {
-		return "", fmt.Errorf("failed to get record value")
-	}
-
-	return recordValue, nil
+	return records, nil
 }
 
 func (p *AliyunProvider) UpdateRecord(domain, recordName, recordType, newIP string, ttl int) error {
-	// First, get the record ID
+	// First, try to get the record ID
 	recordId, err := p.getRecordId(domain, recordName, recordType)
 	if err != nil {
+		// If record doesn't exist, create it
+		if errors.Is(err, ErrRecordNotFound) {
+			return p.addRecord(domain, recordName, recordType, newIP, ttl)
+		}
 		return err
 	}
 
-	// Update the record
-	params := map[string]string{
-		"Action":        "UpdateDomainRecord",
-		"RecordId":      recordId,
-		"RR":            recordName,
-		"Type":          recordType,
-		"Value":         newIP,
-		"TTL":           fmt.Sprintf("%d", ttl),
-		"Format":        "JSON",
-		"Version":       "2015-01-09",
-		"AccessKeyId":   p.accessKey,
-		"SignatureMethod": "HMAC-SHA1",
-		"Timestamp":     time.Now().UTC().Format("2006-01-02T15:04:05Z"),
-		"SignatureVersion": "1.0",
-		"SignatureNonce": fmt.Sprintf("%d", time.Now().UnixNano()),
-	}
+	// Update the existing record
+	params := p.buildBaseParams()
+	params["Action"] = "UpdateDomainRecord"
+	params["RecordId"] = recordId
+	params["RR"] = recordName
+	params["Type"] = recordType
+	params["Value"] = newIP
+	params["TTL"] = fmt.Sprintf("%d", ttl)
 
 	signature := p.generateSignature("POST", params)
 	params["Signature"] = signature
@@ -142,24 +162,16 @@ func (p *AliyunProvider) UpdateRecord(domain, recordName, recordType, newIP stri
 }
 
 func (p *AliyunProvider) getRecordId(domain, recordName, recordType string) (string, error) {
-	params := map[string]string{
-		"Action":        "DescribeDomainRecords",
-		"DomainName":    domain,
-		"RRKeyWord":     recordName,
-		"Type":          recordType,
-		"Format":        "JSON",
-		"Version":       "2015-01-09",
-		"AccessKeyId":   p.accessKey,
-		"SignatureMethod": "HMAC-SHA1",
-		"Timestamp":     time.Now().UTC().Format("2006-01-02T15:04:05Z"),
-		"SignatureVersion": "1.0",
-		"SignatureNonce": fmt.Sprintf("%d", time.Now().UnixNano()),
-	}
+	params := p.buildBaseParams()
+	params["Action"] = "DescribeDomainRecords"
+	params["DomainName"] = domain
+	params["RRKeyWord"] = recordName
+	params["Type"] = recordType
 
-	signature := p.generateSignature("POST", params)
+	signature := p.generateSignature("GET", params)
 	params["Signature"] = signature
 
-	resp, err := p.makeRequest("POST", params)
+	resp, err := p.makeRequest("GET", params)
 	if err != nil {
 		return "", err
 	}
@@ -169,12 +181,11 @@ func (p *AliyunProvider) getRecordId(domain, recordName, recordType string) (str
 	}
 
 	// Extract record ID from response
-	domainRecords, ok := resp.Data["DomainRecords"].(map[string]interface{})
-	if !ok {
+	if resp.DomainRecords == nil {
 		return "", ErrRecordNotFound
 	}
 
-	records, ok := domainRecords["Record"].([]interface{})
+	records, ok := resp.DomainRecords["Record"].([]interface{})
 	if !ok || len(records) == 0 {
 		return "", ErrRecordNotFound
 	}
@@ -184,9 +195,14 @@ func (p *AliyunProvider) getRecordId(domain, recordName, recordType string) (str
 		return "", ErrRecordNotFound
 	}
 
-	recordId, ok := record["RecordId"].(string)
-	if !ok {
-		return "", ErrRecordNotFound
+	// RecordId can be string or number, handle both cases
+	var recordId string
+	if id, ok := record["RecordId"].(string); ok {
+		recordId = id
+	} else if id, ok := record["RecordId"].(float64); ok {
+		recordId = fmt.Sprintf("%.0f", id)
+	} else {
+		return "", fmt.Errorf("invalid RecordId format")
 	}
 
 	return recordId, nil
@@ -220,6 +236,18 @@ func (p *AliyunProvider) generateSignature(method string, params map[string]stri
 	return signature
 }
 
+func (p *AliyunProvider) buildBaseParams() map[string]string {
+	return map[string]string{
+		"Format":           "JSON",
+		"Version":          aliyunAPIVersion,
+		"AccessKeyId":      p.accessKey,
+		"SignatureMethod":  aliyunSignatureMethod,
+		"Timestamp":        time.Now().UTC().Format(timeFormat),
+		"SignatureVersion": aliyunSignatureVersion,
+		"SignatureNonce":   fmt.Sprintf("%d", time.Now().UnixNano()),
+	}
+}
+
 func maskCredential(credential string) string {
 	if len(credential) <= 8 {
 		if len(credential) < 2 {
@@ -228,6 +256,30 @@ func maskCredential(credential string) string {
 		return "***" + credential[len(credential)-2:]
 	}
 	return credential[:4] + "***" + credential[len(credential)-4:]
+}
+
+func (p *AliyunProvider) addRecord(domain, recordName, recordType, value string, ttl int) error {
+	params := p.buildBaseParams()
+	params["Action"] = "AddDomainRecord"
+	params["DomainName"] = domain
+	params["RR"] = recordName
+	params["Type"] = recordType
+	params["Value"] = value
+	params["TTL"] = fmt.Sprintf("%d", ttl)
+
+	signature := p.generateSignature("POST", params)
+	params["Signature"] = signature
+
+	resp, err := p.makeRequest("POST", params)
+	if err != nil {
+		return err
+	}
+
+	if resp.Code != "" && resp.Code != "Success" {
+		return fmt.Errorf("aliyun API error: %s - %s", resp.Code, resp.Message)
+	}
+
+	return nil
 }
 
 func (p *AliyunProvider) makeRequest(method string, params map[string]string) (*AliyunResponse, error) {
@@ -263,9 +315,12 @@ func (p *AliyunProvider) makeRequest(method string, params map[string]string) (*
 		return nil, err
 	}
 
+	// Debug: Uncomment for detailed HTTP response debugging
+	// fmt.Printf("🌐 HTTP Status: %s, Content-Length: %d\n", resp.Status, len(body))
+
 	var aliyunResp AliyunResponse
 	if err := json.Unmarshal(body, &aliyunResp); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("JSON解析失败: %v", err)
 	}
 
 	return &aliyunResp, nil

@@ -253,17 +253,26 @@ func testSingleDNSProvider(dnsManager *dns.DNSManager, updater config.DNSUpdater
 		provider.SetCredentials(updater.AccessKey, updater.SecretKey)
 	}
 
-	// Test each record
-	success := true
-	for _, record := range updater.Records {
-		log.Infof("🔍 测试记录: %s.%s (%s)", record.Name, updater.Domain, record.Type)
+	log.Infof("🔗 连接测试: 正在验证凭证和记录访问...")
 
-		currentValue, err := provider.GetRecord(updater.Domain, record.Name, record.Type)
+	// Test each configured record directly
+	success := true
+	log.Infof("\n🔍 开始测试配置的记录:")
+
+	for i, record := range updater.Records {
+		log.Infof("   [%d/%d] 测试记录: %s.%s (%s)", i+1, len(updater.Records), record.Name, updater.Domain, record.Type)
+
+		currentValue, err := getRecordFromList(provider, updater.Domain, record.Name, record.Type)
 		if err != nil {
-			log.WarnHighlightf("记录查询失败: %v", err)
-			success = false
+			if err.Error() == "DNS record not found" {
+				log.Infof("       📝 记录不存在，程序运行时将自动创建")
+			} else {
+				log.WarnHighlightf("       ⚠️ 记录查询失败: %v", err)
+				log.Infof("       💡 可能的原因: API权限不足、域名配置错误或网络问题")
+				success = false
+			}
 		} else {
-			log.Infof("✅ 当前记录值: %s", currentValue)
+			log.Successf("       ✅ 记录存在，当前值: %s", currentValue)
 		}
 	}
 
@@ -277,3 +286,19 @@ func maskCredential(credential string) string {
 	return credential[:4] + "***" + credential[len(credential)-4:]
 }
 
+
+// getRecordFromList is a helper function to get a specific record from provider
+func getRecordFromList(provider dns.Provider, domain, recordName, recordType string) (string, error) {
+	records, err := provider.GetRecords(domain)
+	if err != nil {
+		return "", err
+	}
+
+	for _, rec := range records {
+		if rec.Name == recordName && rec.Type == recordType {
+			return rec.Value, nil
+		}
+	}
+
+	return "", fmt.Errorf("DNS record not found")
+}

@@ -55,6 +55,11 @@ func NewHuaweiProvider() *HuaweiDNSProvider {
 	}
 }
 
+func (p *HuaweiDNSProvider) GetRecords(domain string) ([]DNSRecord, error) {
+	// TODO: 待验证 - 华为云DNS记录获取功能需要验证和完善
+	return []DNSRecord{}, fmt.Errorf("华为云 GetRecords功能待验证 - 需要测试API调用")
+}
+
 func (p *HuaweiDNSProvider) GetProviderName() string {
 	return "huawei"
 }
@@ -62,39 +67,6 @@ func (p *HuaweiDNSProvider) GetProviderName() string {
 func (p *HuaweiDNSProvider) SetCredentials(accessKey, secretKey string) {
 	p.accessKey = accessKey
 	p.secretKey = secretKey
-}
-
-func (p *HuaweiDNSProvider) GetRecord(domain, recordName, recordType string) (string, error) {
-	zoneId, err := p.getZoneId(domain)
-	if err != nil {
-		return "", err
-	}
-
-	fullRecordName := recordName + "." + domain + "."
-	if recordName == "@" || recordName == "" {
-		fullRecordName = domain + "."
-	}
-
-	url := fmt.Sprintf("/v2/zones/%s/recordsets", zoneId)
-	body, err := p.makeRequest("GET", url, "")
-	if err != nil {
-		return "", err
-	}
-
-	var recordsetList HuaweiRecordSetList
-	if err := json.Unmarshal(body, &recordsetList); err != nil {
-		return "", fmt.Errorf("failed to parse recordsets response: %v", err)
-	}
-
-	for _, recordset := range recordsetList.Recordsets {
-		if recordset.Name == fullRecordName && recordset.Type == recordType {
-			if len(recordset.Records) > 0 {
-				return recordset.Records[0], nil
-			}
-		}
-	}
-
-	return "", ErrRecordNotFound
 }
 
 func (p *HuaweiDNSProvider) UpdateRecord(domain, recordName, recordType, newIP string, ttl int) error {

@@ -58,6 +58,11 @@ func NewTencentProvider() *TencentDNSProvider {
 	}
 }
 
+func (p *TencentDNSProvider) GetRecords(domain string) ([]DNSRecord, error) {
+	// TODO: 待验证 - 腾讯云DNS记录获取功能需要验证和完善
+	return []DNSRecord{}, fmt.Errorf("腾讯云 GetRecords功能待验证 - 需要测试API调用")
+}
+
 func (p *TencentDNSProvider) GetProviderName() string {
 	return "tencent"
 }
@@ -65,37 +70,6 @@ func (p *TencentDNSProvider) GetProviderName() string {
 func (p *TencentDNSProvider) SetCredentials(accessKey, secretKey string) {
 	p.secretId = accessKey
 	p.secretKey = secretKey
-}
-
-func (p *TencentDNSProvider) GetRecord(domain, recordName, recordType string) (string, error) {
-	params := map[string]string{
-		"Action":     "DescribeRecordList",
-		"Version":    "2021-03-23",
-		"Region":     "ap-beijing",
-		"Domain":     domain,
-		"Subdomain":  recordName,
-		"RecordType": recordType,
-	}
-
-	body, err := p.makeRequest(params)
-	if err != nil {
-		return "", err
-	}
-
-	var recordList TencentRecordList
-	if err := json.Unmarshal(body, &recordList); err != nil {
-		return "", fmt.Errorf("failed to parse response: %v", err)
-	}
-
-	if recordList.Response.Error != nil {
-		return "", fmt.Errorf("tencent API error: %s - %s", recordList.Response.Error.Code, recordList.Response.Error.Message)
-	}
-
-	if len(recordList.Response.RecordList) == 0 {
-		return "", ErrRecordNotFound
-	}
-
-	return recordList.Response.RecordList[0].Value, nil
 }
 
 func (p *TencentDNSProvider) UpdateRecord(domain, recordName, recordType, newIP string, ttl int) error {

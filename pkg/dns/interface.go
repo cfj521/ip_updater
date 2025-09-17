@@ -11,9 +11,16 @@ type Logger interface {
 	Errorf(format string, args ...interface{})
 }
 
+type DNSRecord struct {
+	Name  string `json:"name"`
+	Type  string `json:"type"`
+	Value string `json:"value"`
+	TTL   int    `json:"ttl"`
+}
+
 type Provider interface {
 	UpdateRecord(domain, recordName, recordType, newIP string, ttl int) error
-	GetRecord(domain, recordName, recordType string) (string, error)
+	GetRecords(domain string) ([]DNSRecord, error)
 	GetProviderName() string
 	SetCredentials(accessKey, secretKey string)
 }
@@ -70,27 +77,43 @@ func (dm *DNSManager) UpdateDNSRecord(updater config.DNSUpdater, ip string) erro
 		}
 
 		// Get current record value for comparison
-		currentIP, err := provider.GetRecord(updater.Domain, record.Name, record.Type)
-
+		records, err := provider.GetRecords(updater.Domain)
 		if err != nil {
 			if dm.logger != nil {
-				dm.logger.Warnf("⚠️ 无法获取当前DNS记录值 %s: %v", recordKey, err)
+				dm.logger.Warnf("⚠️ 无法获取DNS记录列表 %s: %v", updater.Domain, err)
 				dm.logger.Infof("🔄 尝试直接更新DNS记录...")
 			}
 		} else {
-			if dm.logger != nil {
-				dm.logger.Infof("✅ 获取到当前DNS记录值: %s = '%s'", recordKey, currentIP)
-			}
-
-			if currentIP == ip {
-				if dm.logger != nil {
-					dm.logger.Infof("✔️ DNS记录值未变化，跳过更新: %s = '%s'", recordKey, currentIP)
+			// Find the matching record
+			var currentIP string
+			var found bool
+			for _, rec := range records {
+				if rec.Name == record.Name && rec.Type == record.Type {
+					currentIP = rec.Value
+					found = true
+					break
 				}
-				continue
 			}
 
-			if dm.logger != nil {
-				dm.logger.Infof("📝 DNS记录值需要更新: %s 从 '%s' 更新为 '%s'", recordKey, currentIP, ip)
+			if found {
+				if dm.logger != nil {
+					dm.logger.Infof("✅ 获取到当前DNS记录值: %s = '%s'", recordKey, currentIP)
+				}
+
+				if currentIP == ip {
+					if dm.logger != nil {
+						dm.logger.Infof("✔️ DNS记录值未变化，跳过更新: %s = '%s'", recordKey, currentIP)
+					}
+					continue
+				}
+
+				if dm.logger != nil {
+					dm.logger.Infof("📝 DNS记录值需要更新: %s 从 '%s' 更新为 '%s'", recordKey, currentIP, ip)
+				}
+			} else {
+				if dm.logger != nil {
+					dm.logger.Infof("🆕 未找到现有DNS记录，将创建新记录: %s", recordKey)
+				}
 			}
 		}
 
