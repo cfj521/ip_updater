@@ -5,6 +5,24 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.2.0] - 2025-12-05
+
+### 变更
+- **运行模式重构**：默认单次运行模式，执行一次IP检测和更新后退出
+- 新增 `-daemon` 参数，显式启用守护进程模式才会持续运行
+- 优化启动日志，仅在daemon模式下显示检查间隔信息
+
+### 使用方式
+```bash
+# 单次运行（默认）
+./ip_updater -config /path/to/config.conf
+
+# daemon模式（持续运行）
+./ip_updater -daemon -config /path/to/config.conf
+```
+
+---
+
 ## [1.1.10] - 2025-01-17
 
 ### 新增

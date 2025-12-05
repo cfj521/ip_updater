@@ -9,7 +9,7 @@
 - ✅ **配置文件更新**：支持JSON、YAML、TOML、INI格式文件的IP地址更新
 - ✅ **混合更新模式**：DNS和文件更新可同时使用，按配置顺序执行
 - ✅ **失败重试机制**：可配置重试间隔和次数，支持无限重试
-- ✅ **守护进程模式**：常驻后台运行，自动创建systemd服务
+- ✅ **灵活运行模式**：支持单次运行（默认）和守护进程模式（-daemon）
 - ✅ **日志管理**：多级别日志记录，文件轮转支持
 - ✅ **安全加密**：API密钥自动加密存储
 - ✅ **配置备份**：文件更新前自动备份
@@ -79,8 +79,21 @@ sudo cp examples/aliyun-config.conf /etc/ip_updater/config.conf
 sudo nano /etc/ip_updater/config.conf
 ```
 
-### 4. 启动服务
+### 4. 运行方式
 
+#### 单次运行（默认）
+```bash
+# 执行一次IP检测和更新后退出
+./ip_updater -config /etc/ip_updater/config.conf
+```
+
+#### 守护进程模式
+```bash
+# 持续运行，定期检测IP变化
+./ip_updater -daemon -config /etc/ip_updater/config.conf
+```
+
+#### systemd服务（推荐用于守护进程模式）
 ```bash
 sudo systemctl enable ip_updater
 sudo systemctl start ip_updater
@@ -221,7 +234,7 @@ sudo systemctl restart ip_updater
 
 ## 版本信息
 
-- 版本：1.0.0
+- 版本：1.2.0
 - Go版本要求：1.21+
 - 目标系统：Linux Debian/Ubuntu
 - 架构：AMD64

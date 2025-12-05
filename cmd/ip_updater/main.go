@@ -23,7 +23,7 @@ var (
 	testDNS    = flag.Bool("test-dns", false, "Test DNS provider credentials and connectivity")
 )
 
-var Version = "1.1.10" // Will be overridden by build script
+var Version = "1.2.0" // Will be overridden by build script
 
 func main() {
 	flag.Parse()
@@ -67,10 +67,53 @@ func main() {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 
 	log.Infof("IP-Updater v%s started", Version)
-	log.Infof("DNS check interval: %d minutes", cfg.DNSCheckInterval/60)
-	log.Infof("File check interval: %d minutes", cfg.FileCheckInterval/60)
 	log.Infof("Configured DNS updaters: %d", len(cfg.DNSUpdaters))
 	log.Infof("Configured file updaters: %d", len(cfg.FileUpdaters))
+
+	// 执行一次检测和更新
+	log.Info("执行IP检测和更新...")
+
+	// DNS检测和更新
+	currentIP, err := ipDetector.GetPublicIP()
+	if err != nil {
+		log.ErrorHighlightf("获取公网IP失败: %v", err)
+		os.Exit(1)
+	}
+
+	log.Infof("当前公网IP: %s", currentIP)
+
+	// 执行DNS更新
+	if len(cfg.DNSUpdaters) > 0 {
+		if err := ipUpdater.UpdateDNS(currentIP); err != nil {
+			log.ErrorHighlightf("DNS更新失败: %v", err)
+		} else {
+			log.Successf("DNS更新完成，IP: %s", currentIP)
+		}
+	} else {
+		log.Debugf("未配置DNS更新器，跳过DNS更新")
+	}
+
+	// 执行文件更新
+	if len(cfg.FileUpdaters) > 0 {
+		if err := ipUpdater.UpdateFiles(currentIP); err != nil {
+			log.ErrorHighlightf("文件更新失败: %v", err)
+		} else {
+			log.Successf("文件更新完成，IP: %s", currentIP)
+		}
+	} else {
+		log.Debugf("未配置文件更新器，跳过文件更新")
+	}
+
+	// 如果不是daemon模式，执行完毕后退出
+	if !*daemon {
+		log.Info("单次运行完成，退出")
+		return
+	}
+
+	// daemon模式：进入持续运行
+	log.Infof("进入daemon模式")
+	log.Infof("DNS检查间隔: %d分钟", cfg.DNSCheckInterval/60)
+	log.Infof("文件检查间隔: %d分钟", cfg.FileCheckInterval/60)
 
 	// 创建分离的定时器
 	dnsTicker := time.NewTicker(time.Duration(cfg.DNSCheckInterval) * time.Second)
@@ -79,8 +122,8 @@ func main() {
 	fileTicker := time.NewTicker(time.Duration(cfg.FileCheckInterval) * time.Second)
 	defer fileTicker.Stop()
 
-	var dnsLastIP string
-	var fileLastIP string
+	dnsLastIP := currentIP
+	fileLastIP := currentIP
 
 	// Start shutdown handler in separate goroutine
 	go func() {
@@ -88,41 +131,6 @@ func main() {
 		log.Infof("收到信号 %v，开始优雅关闭...", sig)
 		cancel() // Cancel context to trigger graceful shutdown
 	}()
-
-	// 启动时立即执行一次检测和更新
-	log.Info("执行启动时的立即检测...")
-
-	// DNS检测和更新
-	currentIP, err := ipDetector.GetPublicIP()
-	if err != nil {
-		log.ErrorHighlightf("获取公网IP失败(启动检测): %v", err)
-	} else {
-		log.Infof("当前公网IP: %s", currentIP)
-
-		if len(cfg.DNSUpdaters) > 0 {
-			if err := ipUpdater.UpdateDNS(currentIP); err != nil {
-				log.ErrorHighlightf("DNS更新失败(启动检测): %v", err)
-			} else {
-				log.Successf("DNS更新完成(启动检测)，新IP: %s", currentIP)
-				dnsLastIP = currentIP
-			}
-		} else {
-			log.Debugf("未配置DNS更新器，跳过DNS更新(启动检测)")
-			dnsLastIP = currentIP
-		}
-
-		if len(cfg.FileUpdaters) > 0 {
-			if err := ipUpdater.UpdateFiles(currentIP); err != nil {
-				log.ErrorHighlightf("文件更新失败(启动检测): %v", err)
-			} else {
-				log.Successf("文件更新完成(启动检测)，新IP: %s", currentIP)
-				fileLastIP = currentIP
-			}
-		} else {
-			log.Debugf("未配置文件更新器，跳过文件更新(启动检测)")
-			fileLastIP = currentIP
-		}
-	}
 
 	// 启动强制退出定时器
 	forceExitTimer := time.AfterFunc(5*time.Second, func() {
