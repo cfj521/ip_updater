@@ -17,7 +17,7 @@ NC='\033[0m' # No Color
 # Build configuration
 BINARY_NAME="ip_updater"
 BUILD_DIR="build"
-VERSION="1.0.0"
+VERSION=$(cat version.txt 2>/dev/null || echo "1.2.0")
 BUILD_TIME=$(date -u '+%Y-%m-%d_%H:%M:%S')
 GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
@@ -65,15 +65,29 @@ echo -e "${YELLOW}Creating systemd service file...${NC}"
 cat > ${BUILD_DIR}/ip_updater.service << EOF
 [Unit]
 Description=IP Updater Service
-After=network.target
+After=network.target network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
 User=root
-ExecStart=/usr/local/bin/ip_updater -config=/etc/ip_updater/config.conf
+ExecStart=/usr/local/bin/ip_updater -daemon -config=/etc/ip_updater/config.conf
 Restart=always
 RestartSec=10
-KillMode=process
+
+# 超时设置
+TimeoutStartSec=60
+TimeoutStopSec=30
+TimeoutSec=90
+
+# 信号处理优化
+KillMode=mixed
+KillSignal=SIGTERM
+SendSIGKILL=yes
+
+# 服务限制
+LimitNOFILE=1024
+MemoryMax=100M
 
 [Install]
 WantedBy=multi-user.target
