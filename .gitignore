@@ -1,0 +1,19 @@
+# 构建输出目录
+/build/
+
+# 编译产物
+*.exe
+/ip_updater
+/ip_updater_linux
+/ip_updater_linux_stripped
+/ip_updater_stripped
+
+# 测试与覆盖率
+*.out
+coverage.*
+
+# 编辑器 / 系统
+.DS_Store
+.idea/
+.vscode/
+*.swp

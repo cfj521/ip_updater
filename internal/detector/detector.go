@@ -3,10 +3,14 @@ package detector
 import (
 	"errors"
 	"io"
+	"net"
 	"net/http"
-	"strings"
+	"regexp"
 	"time"
 )
+
+// ipv4Regex 匹配点分十进制 IPv4，用于从任意响应体（纯文本/JSON/HTML）中提取 IP
+var ipv4Regex = regexp.MustCompile(`(?:\d{1,3}\.){3}\d{1,3}`)
 
 type Config struct {
 	APIEndpoints []string `toml:"api_endpoints"`
@@ -37,14 +41,14 @@ func (d *Detector) GetPublicIP() (string, error) {
 	// Try API endpoints first
 	for _, endpoint := range d.config.APIEndpoints {
 		if ip, err := d.getIPFromEndpoint(endpoint); err == nil {
-			return strings.TrimSpace(ip), nil
+			return ip, nil
 		}
 	}
 
 	// Fall back to web endpoints
 	for _, endpoint := range d.config.WebEndpoints {
 		if ip, err := d.getIPFromEndpoint(endpoint); err == nil {
-			return strings.TrimSpace(ip), nil
+			return ip, nil
 		}
 	}
 
@@ -67,34 +71,27 @@ func (d *Detector) getIPFromEndpoint(endpoint string) (string, error) {
 		return "", err
 	}
 
-	// Extract IP from response
-	ip := strings.TrimSpace(string(body))
-
-	// Basic IP validation
-	if !isValidIP(ip) {
-		return "", errors.New("invalid IP format")
+	// 从响应体中提取 IP，兼容纯文本、JSON、HTML 等各种格式
+	ip := extractIP(string(body))
+	if ip == "" {
+		return "", errors.New("no valid IP found in response")
 	}
 
 	return ip, nil
 }
 
+// extractIP 从任意文本中提取第一个合法的 IPv4 地址（按出现顺序，取首个有效的）
+func extractIP(body string) string {
+	for _, candidate := range ipv4Regex.FindAllString(body, -1) {
+		if isValidIP(candidate) {
+			return candidate
+		}
+	}
+	return ""
+}
+
+// isValidIP 校验是否为合法的 IPv4 地址（含 0-255 取值范围检查）
 func isValidIP(ip string) bool {
-	parts := strings.Split(ip, ".")
-	if len(parts) != 4 {
-		return false
-	}
-
-	for _, part := range parts {
-		if len(part) == 0 || len(part) > 3 {
-			return false
-		}
-
-		for _, char := range part {
-			if char < '0' || char > '9' {
-				return false
-			}
-		}
-	}
-
-	return true
+	parsed := net.ParseIP(ip)
+	return parsed != nil && parsed.To4() != nil
 }

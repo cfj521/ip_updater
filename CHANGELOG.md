@@ -5,6 +5,22 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.2.3] - 2026-06-02
+
+### 修复
+- **IP解析逻辑**：修正IP检测只接受"整段响应恰好为纯IPv4"的缺陷，现改为用正则从响应体（纯文本/JSON/HTML）中提取并取首个合法IPv4
+- IP校验改用 `net.ParseIP`，新增 0–255 取值范围校验，修复 `999.999.999.999` 等非法地址被误判为有效的问题
+
+### 变更
+- **更新默认IP检测源**：移除已失效的 `ip.3322.net`、`members.3322.org`、`ip.cn`、`ip4.seeip.org`
+- 新增国内可直连源：`vv.video.qq.com`（api）、`whois.pconline.com.cn`、`g3.letv.com`（web 兜底）
+- 同步更新 `config.go` 默认值与内嵌模板、`build/default-config.conf` 及全部 `examples/*.conf`
+
+### 测试
+- 新增 `internal/detector/detector_test.go`，基于真实响应样本验证IP提取与范围校验
+
+---
+
 ## [1.2.0] - 2025-12-05
 
 ### 变更

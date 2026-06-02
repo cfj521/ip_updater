@@ -4,7 +4,7 @@
 
 ## 功能特性
 
-- ✅ **多种IP检测方式**：优先使用API端点，支持Web端点作为备选
+- ✅ **多种IP检测方式**：优先使用API端点，支持Web端点作为备选；可自动从纯文本/JSON/HTML 响应中提取并校验公网IP
 - ✅ **多DNS服务商支持**：阿里云、腾讯云、华为云、Cloudflare、GoDaddy
 - ✅ **配置文件更新**：支持JSON、YAML、TOML、INI格式文件的IP地址更新
 - ✅ **混合更新模式**：DNS和文件更新可同时使用，按配置顺序执行
@@ -109,8 +109,17 @@ check_interval = 300
 
 [ip_detection]
 timeout = 30
-api_endpoints = ["https://api.ipify.org", "https://ipv4.icanhazip.com"]
-web_endpoints = ["https://ifconfig.me/ip", "https://ipinfo.io/ip"]
+# 优先尝试 api_endpoints（从上到下，第一个成功即停止）
+api_endpoints = [
+    "https://myip.ipip.net",
+    "https://ddns.oray.com/checkip",
+    "https://vv.video.qq.com/checktime?otype=json",
+]
+# api_endpoints 全部失败后，再依次尝试 web_endpoints 作为兜底
+web_endpoints = [
+    "https://whois.pconline.com.cn/ipJson.jsp?json=true",
+    "https://g3.letv.com/r?format=1",
+]
 
 [retry]
 interval = 60        # 重试间隔
@@ -120,6 +129,11 @@ max_retries = -1     # 最大重试次数（-1表示无限）
 level = "info"
 file_path = "/var/log/ip_updater/ip_updater.log"
 ```
+
+> **IP检测说明**
+> - **探测顺序**：先按顺序遍历 `api_endpoints`，任一端点成功即返回、后续不再请求；全部失败后才依次尝试 `web_endpoints` 兜底。
+> - **响应解析**：无需端点返回纯 IP，程序会用正则从响应体（纯文本 / JSON / HTML 均可）中提取第一个合法 IPv4，并做 0–255 取值范围校验，解析失败的端点会自动跳过。
+> - **默认源均为中国大陆可直连服务**。如服务器走代理出口，请确保所选端点返回的是你期望写入 DNS 的那个公网 IP。
 
 ### DNS更新配置
 
@@ -234,7 +248,7 @@ sudo systemctl restart ip_updater
 
 ## 版本信息
 
-- 版本：1.2.0
+- 版本：1.2.3
 - Go版本要求：1.21+
 - 目标系统：Linux Debian/Ubuntu
 - 架构：AMD64

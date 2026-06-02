@@ -1,60 +1,56 @@
-#!/bin/bash
+#requires -Version 5.1
+<#
+    IP-Updater 构建脚本 (Windows / PowerShell)
+    交叉编译 Linux/amd64 二进制，并生成 systemd 服务、安装/卸载脚本与部署说明。
+    版本号唯一来源：version.txt（完整 x.y.z，不自增）。
+#>
 
-# IP-Updater 构建脚本 (Linux)
-# 交叉编译 Linux/amd64 二进制，并生成 systemd 服务、安装/卸载脚本与部署说明。
-# 版本号唯一来源：version.txt（完整 x.y.z，不自增）。
+$ErrorActionPreference = 'Stop'
 
-set -e
+# ---- 构建配置 ----
+$BinaryName = 'ip_updater'
+$BuildDir   = 'build'
+$Version    = (Test-Path version.txt) ? (Get-Content version.txt -Raw).Trim() : '0.0.0'
+$BuildTime  = (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd_HH:mm:ss')
+$GitCommit  = (git rev-parse --short HEAD 2>$null)
+if (-not $GitCommit) { $GitCommit = 'unknown' }
 
-echo "Starting IP-Updater build process..."
+Write-Host "Build Configuration:" -ForegroundColor Blue
+Write-Host "  Binary Name: $BinaryName"
+Write-Host "  Version:     $Version"
+Write-Host "  Build Time:  $BuildTime"
+Write-Host "  Git Commit:  $GitCommit"
+Write-Host "  Target:      Linux AMD64"
+Write-Host ""
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+# 以 LF 换行写出文本文件（bash 脚本不能带 CR）
+function Write-LfFile($Path, $Content) {
+    $lf = $Content -replace "`r`n", "`n"
+    [System.IO.File]::WriteAllText($Path, $lf, (New-Object System.Text.UTF8Encoding $false))
+}
 
-# Build configuration
-BINARY_NAME="ip_updater"
-BUILD_DIR="build"
-VERSION=$(cat version.txt 2>/dev/null || echo "0.0.0")
-BUILD_TIME=$(date -u '+%Y-%m-%d_%H:%M:%S')
-GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+# ---- 准备构建目录 ----
+Write-Host "Creating build directory..." -ForegroundColor Yellow
+if (Test-Path $BuildDir) { Remove-Item $BuildDir -Recurse -Force }
+New-Item -ItemType Directory -Path $BuildDir | Out-Null
 
-# Go build flags（仅注入 main.Version，main 包未定义 BuildTime/GitCommit）
-LDFLAGS="-s -w -X main.Version=${VERSION}"
-
-echo -e "${BLUE}Build Configuration:${NC}"
-echo "  Binary Name: ${BINARY_NAME}"
-echo "  Version: ${VERSION}"
-echo "  Build Time: ${BUILD_TIME}"
-echo "  Git Commit: ${GIT_COMMIT}"
-echo "  Target: Linux AMD64"
-echo ""
-
-# Create build directory
-echo -e "${YELLOW}Creating build directory...${NC}"
-rm -rf ${BUILD_DIR}
-mkdir -p ${BUILD_DIR}
-
-# Download dependencies
-echo -e "${YELLOW}Downloading Go modules...${NC}"
+# ---- 依赖 ----
+Write-Host "Downloading Go modules..." -ForegroundColor Yellow
 go mod download
 go mod tidy
 
-# Build for Linux AMD64
-echo -e "${YELLOW}Building for Linux AMD64...${NC}"
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
-    -ldflags="${LDFLAGS}" \
-    -o ${BUILD_DIR}/${BINARY_NAME} \
-    ./cmd/ip_updater
+# ---- 编译 Linux/amd64 ----
+Write-Host "Building for Linux AMD64..." -ForegroundColor Yellow
+$env:CGO_ENABLED = '0'
+$env:GOOS = 'linux'
+$env:GOARCH = 'amd64'
+go build -ldflags "-s -w -X main.Version=$Version" -o "$BuildDir/$BinaryName" ./cmd/ip_updater
+if ($LASTEXITCODE -ne 0) { Write-Host "Build failed!" -ForegroundColor Red; exit 1 }
+Write-Host "Build successful!" -ForegroundColor Green
 
-echo -e "${GREEN}✓ Build successful!${NC}"
-
-# Create systemd service file
-echo -e "${YELLOW}Creating systemd service file...${NC}"
-cat > ${BUILD_DIR}/ip_updater.service << EOF
+# ---- systemd 服务文件 ----
+Write-Host "Creating systemd service file..." -ForegroundColor Yellow
+$service = @'
 [Unit]
 Description=IP Updater Service
 After=network.target network-online.target
@@ -83,11 +79,12 @@ MemoryMax=100M
 
 [Install]
 WantedBy=multi-user.target
-EOF
+'@
+Write-LfFile "$BuildDir/ip_updater.service" $service
 
-# Create installation script
-echo -e "${YELLOW}Creating installation script...${NC}"
-cat > ${BUILD_DIR}/install.sh << 'EOF'
+# ---- 安装脚本 ----
+Write-Host "Creating installation script..." -ForegroundColor Yellow
+$install = @'
 #!/bin/bash
 
 set -e
@@ -149,13 +146,12 @@ echo "  sudo journalctl -u ip_updater -f"
 echo ""
 echo "Configuration file: ${CONFIG_DIR}/config.conf"
 echo "Log file: ${LOG_DIR}/ip_updater.log"
-EOF
+'@
+Write-LfFile "$BuildDir/install.sh" $install
 
-chmod +x ${BUILD_DIR}/install.sh
-
-# Create uninstall script
-echo -e "${YELLOW}Creating uninstall script...${NC}"
-cat > ${BUILD_DIR}/uninstall.sh << 'EOF'
+# ---- 卸载脚本 ----
+Write-Host "Creating uninstall script..." -ForegroundColor Yellow
+$uninstall = @'
 #!/bin/bash
 
 set -e
@@ -202,91 +198,75 @@ echo "Note: Configuration and log files were not removed."
 echo "To remove them manually:"
 echo "  sudo rm -rf /etc/ip_updater"
 echo "  sudo rm -rf /var/log/ip_updater"
-EOF
+'@
+Write-LfFile "$BuildDir/uninstall.sh" $uninstall
 
-chmod +x ${BUILD_DIR}/uninstall.sh
-
-# Create README for deployment
-echo -e "${YELLOW}Creating deployment README...${NC}"
-cat > ${BUILD_DIR}/README.md << EOF
+# ---- 部署 README（占位符稍后替换，避免 PowerShell 解析反引号/$）----
+Write-Host "Creating deployment README..." -ForegroundColor Yellow
+$readme = @'
 # IP-Updater Deployment
 
 ## Installation
 
 1. Copy all files from the build directory to your Linux Debian server
 2. Run the installation script as root:
-   \`\`\`bash
+   ```bash
    sudo ./install.sh
-   \`\`\`
+   ```
 
 ## Configuration
 
-Edit the configuration file at \`/etc/ip_updater/config.conf\` to:
+Edit the configuration file at `/etc/ip_updater/config.conf` to:
 - Configure DNS providers (uncomment and fill in your credentials)
 - Set up file updaters if needed
 - Adjust check intervals and retry settings
 
 ## Starting the Service
 
-\`\`\`bash
+```bash
 sudo systemctl enable ip_updater
 sudo systemctl start ip_updater
-\`\`\`
+```
 
 ## Monitoring
 
 Check service status:
-\`\`\`bash
+```bash
 sudo systemctl status ip_updater
-\`\`\`
+```
 
 View logs:
-\`\`\`bash
+```bash
 sudo journalctl -u ip_updater -f
-\`\`\`
+```
 
 Or check the log file:
-\`\`\`bash
+```bash
 sudo tail -f /var/log/ip_updater/ip_updater.log
-\`\`\`
+```
 
 ## Uninstallation
 
 Run the uninstall script:
-\`\`\`bash
+```bash
 sudo ./uninstall.sh
-\`\`\`
+```
 
 ## Binary Information
 
-- Version: ${VERSION}
-- Build Time: ${BUILD_TIME}
-- Git Commit: ${GIT_COMMIT}
+- Version: __VERSION__
+- Build Time: __BUILD_TIME__
+- Git Commit: __GIT_COMMIT__
 - Target: Linux AMD64
-EOF
+'@
+$readme = $readme.Replace('__VERSION__', $Version).Replace('__BUILD_TIME__', $BuildTime).Replace('__GIT_COMMIT__', $GitCommit)
+Write-LfFile "$BuildDir/README.md" $readme
 
-# Show build summary
-echo ""
-echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}         Build Complete!${NC}"
-echo -e "${GREEN}========================================${NC}"
-echo ""
-echo "Build artifacts created in: ${BUILD_DIR}/"
-echo "Files:"
-echo "  ${BINARY_NAME}           - Main executable"
-echo "  ip_updater.service      - Systemd service file"
-echo "  install.sh              - Installation script"
-echo "  uninstall.sh            - Uninstallation script"
-echo "  README.md               - Deployment guide"
-echo ""
-echo -e "${BLUE}File sizes:${NC}"
-ls -lh ${BUILD_DIR}/
-
-echo ""
-echo -e "${YELLOW}Next steps:${NC}"
-echo "1. Copy the build directory to your target server"
-echo "2. Run './install.sh' as root on the target server"
-echo "3. Configure /etc/ip_updater/config.conf"
-echo "4. Start the service: systemctl start ip_updater"
-echo ""
-echo -e "${GREEN}Happy deploying! 🚀${NC}"
+# ---- 构建摘要 ----
+Write-Host ""
+Write-Host "========================================" -ForegroundColor Green
+Write-Host "         Build Complete!" -ForegroundColor Green
+Write-Host "========================================" -ForegroundColor Green
+Write-Host ""
+Write-Host "Build artifacts created in: $BuildDir/"
+Get-ChildItem $BuildDir | Format-Table Name, Length -AutoSize
