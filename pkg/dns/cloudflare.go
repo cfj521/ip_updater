@@ -57,8 +57,63 @@ func NewCloudflareProvider() *CloudflareDNSProvider {
 }
 
 func (p *CloudflareDNSProvider) GetRecords(domain string) ([]DNSRecord, error) {
-	// TODO: 待验证 - Cloudflare DNS记录获取功能需要验证和完善
-	return []DNSRecord{}, fmt.Errorf("Cloudflare GetRecords功能待验证 - 需要测试API调用")
+	// 获取 zone_id
+	zoneId, err := p.getZoneId(domain)
+	if err != nil {
+		return nil, fmt.Errorf("获取zone失败: %w", err)
+	}
+
+	// 获取所有 DNS 记录
+	url := fmt.Sprintf("/zones/%s/dns_records?per_page=100", zoneId)
+	body, err := p.makeRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var response CloudflareResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, fmt.Errorf("解析响应失败: %w", err)
+	}
+
+	if !response.Success {
+		return nil, p.formatCloudflareErrors(response.Errors)
+	}
+
+	records, ok := response.Result.([]interface{})
+	if !ok {
+		return []DNSRecord{}, nil
+	}
+
+	var dnsRecords []DNSRecord
+	for _, item := range records {
+		recordData, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		recordId, _ := recordData["id"].(string)
+		recordType, _ := recordData["type"].(string)
+		name, _ := recordData["name"].(string)
+		content, _ := recordData["content"].(string)
+		ttlFloat, _ := recordData["ttl"].(float64)
+		ttl := int(ttlFloat)
+
+		// Cloudflare TTL: 1 = 自动，其他为秒数
+		if ttl == 1 {
+			ttl = 0 // 0 表示自动
+		}
+
+		dnsRecords = append(dnsRecords, DNSRecord{
+			Name:  name,
+			Type:  recordType,
+			Value: content,
+			TTL:   ttl,
+		})
+
+		_ = recordId // 保留供将来使用
+	}
+
+	return dnsRecords, nil
 }
 
 func (p *CloudflareDNSProvider) GetProviderName() string {

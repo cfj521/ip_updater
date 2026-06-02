@@ -44,8 +44,30 @@ func NewGoDaddyProvider() *GoDaddyDNSProvider {
 }
 
 func (p *GoDaddyDNSProvider) GetRecords(domain string) ([]DNSRecord, error) {
-	// TODO: 待验证 - GoDaddy DNS记录获取功能需要验证和完善
-	return []DNSRecord{}, fmt.Errorf("GoDaddy GetRecords功能待验证 - 需要测试API调用")
+	// GoDaddy 获取所有记录：不指定 type 和 name
+	url := fmt.Sprintf("/domains/%s/records", domain)
+
+	body, err := p.makeRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var records []GoDaddyRecord
+	if err := json.Unmarshal(body, &records); err != nil {
+		return nil, fmt.Errorf("解析响应失败: %w", err)
+	}
+
+	var dnsRecords []DNSRecord
+	for _, record := range records {
+		dnsRecords = append(dnsRecords, DNSRecord{
+			Name:  record.Name,
+			Type:  record.Type,
+			Value: record.Data,
+			TTL:   record.TTL,
+		})
+	}
+
+	return dnsRecords, nil
 }
 
 func (p *GoDaddyDNSProvider) GetProviderName() string {

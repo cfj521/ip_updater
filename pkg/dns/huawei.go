@@ -56,8 +56,44 @@ func NewHuaweiProvider() *HuaweiDNSProvider {
 }
 
 func (p *HuaweiDNSProvider) GetRecords(domain string) ([]DNSRecord, error) {
-	// TODO: 待验证 - 华为云DNS记录获取功能需要验证和完善
-	return []DNSRecord{}, fmt.Errorf("华为云 GetRecords功能待验证 - 需要测试API调用")
+	// 先获取 zone_id
+	zoneId, err := p.getZoneId(domain)
+	if err != nil {
+		return nil, fmt.Errorf("获取zone失败: %w", err)
+	}
+
+	// 获取所有记录集
+	url := fmt.Sprintf("/v2/zones/%s/recordsets?limit=1000", zoneId)
+	body, err := p.makeRequest("GET", url, "")
+	if err != nil {
+		return nil, err
+	}
+
+	var recordsetList HuaweiRecordSetList
+	if err := json.Unmarshal(body, &recordsetList); err != nil {
+		return nil, fmt.Errorf("解析响应失败: %w", err)
+	}
+
+	var dnsRecords []DNSRecord
+	for _, recordset := range recordsetList.Recordsets {
+		// 华为云的 records 字段是字符串数组，只取第一个值
+		var value string
+		if len(recordset.Records) > 0 {
+			value = recordset.Records[0]
+		}
+
+		// 处理域名格式：华为云返回的name带末尾点，需要去掉
+		name := strings.TrimSuffix(recordset.Name, ".")
+
+		dnsRecords = append(dnsRecords, DNSRecord{
+			Name:  name,
+			Type:  recordset.Type,
+			Value: value,
+			TTL:   recordset.TTL,
+		})
+	}
+
+	return dnsRecords, nil
 }
 
 func (p *HuaweiDNSProvider) GetProviderName() string {

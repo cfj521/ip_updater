@@ -59,8 +59,43 @@ func NewTencentProvider() *TencentDNSProvider {
 }
 
 func (p *TencentDNSProvider) GetRecords(domain string) ([]DNSRecord, error) {
-	// TODO: 待验证 - 腾讯云DNS记录获取功能需要验证和完善
-	return []DNSRecord{}, fmt.Errorf("腾讯云 GetRecords功能待验证 - 需要测试API调用")
+	params := map[string]string{
+		"Action":     "DescribeRecordList",
+		"Version":    "2021-03-23",
+		"Region":     "ap-beijing",
+		"Domain":     domain,
+		"Limit":      "3000", // 最大支持3000条
+		"Offset":     "0",
+		"Subdomain":  "@", // 获取所有子域名
+		"RecordType": "",  // 获取所有类型
+	}
+
+	body, err := p.makeRequest(params)
+	if err != nil {
+		return nil, err
+	}
+
+	var recordList TencentRecordList
+	if err := json.Unmarshal(body, &recordList); err != nil {
+		return nil, fmt.Errorf("解析响应失败: %w", err)
+	}
+
+	if recordList.Response.Error != nil {
+		return nil, fmt.Errorf("腾讯云API错误: %s - %s",
+			recordList.Response.Error.Code, recordList.Response.Error.Message)
+	}
+
+	var dnsRecords []DNSRecord
+	for _, record := range recordList.Response.RecordList {
+		dnsRecords = append(dnsRecords, DNSRecord{
+			Name:  record.Name,
+			Type:  record.Type,
+			Value: record.Value,
+			TTL:   int(record.TTL),
+		})
+	}
+
+	return dnsRecords, nil
 }
 
 func (p *TencentDNSProvider) GetProviderName() string {

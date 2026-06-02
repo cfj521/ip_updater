@@ -174,6 +174,7 @@ func (p *AliyunProvider) getRecordId(domain, recordName, recordType string) (str
 	params["DomainName"] = domain
 	params["RRKeyWord"] = recordName
 	params["Type"] = recordType
+	params["SearchMode"] = "EXACT" // 精确匹配，避免模糊搜索导致找到多条记录
 
 	signature := p.generateSignature("GET", params)
 	params["Signature"] = signature
@@ -197,22 +198,34 @@ func (p *AliyunProvider) getRecordId(domain, recordName, recordType string) (str
 		return "", ErrRecordNotFound
 	}
 
-	record, ok := records[0].(map[string]interface{})
-	if !ok {
-		return "", ErrRecordNotFound
+	// 遍历所有记录，找到RR完全匹配的记录
+	for _, item := range records {
+		record, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		rr, ok := record["RR"].(string)
+		if !ok {
+			continue
+		}
+
+		// 精确匹配RR字段
+		if rr == recordName {
+			// RecordId can be string or number, handle both cases
+			var recordId string
+			if id, ok := record["RecordId"].(string); ok {
+				recordId = id
+			} else if id, ok := record["RecordId"].(float64); ok {
+				recordId = fmt.Sprintf("%.0f", id)
+			} else {
+				continue
+			}
+			return recordId, nil
+		}
 	}
 
-	// RecordId can be string or number, handle both cases
-	var recordId string
-	if id, ok := record["RecordId"].(string); ok {
-		recordId = id
-	} else if id, ok := record["RecordId"].(float64); ok {
-		recordId = fmt.Sprintf("%.0f", id)
-	} else {
-		return "", fmt.Errorf("invalid RecordId format")
-	}
-
-	return recordId, nil
+	return "", ErrRecordNotFound
 }
 
 func (p *AliyunProvider) generateSignature(method string, params map[string]string) string {

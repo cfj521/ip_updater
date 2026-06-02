@@ -75,24 +75,36 @@ func (dm *DNSManager) UpdateDNSRecord(updater config.DNSUpdater, ip string) erro
 	}
 
 	records, err := provider.GetRecords(updater.Domain)
-	var recordsMap map[string]string // key: "name/type", value: current IP
+	var recordsMap map[string]map[string]string // key: "type", value: map[name->value]
 
 	if err != nil {
 		if dm.logger != nil {
 			dm.logger.Warnf("⚠️ 无法获取DNS记录列表 %s: %v", updater.Domain, err)
 			dm.logger.Infof("🔄 将对所有记录尝试直接更新...")
 		}
-		recordsMap = make(map[string]string) // 空映射，所有记录都将被视为新记录
+		recordsMap = make(map[string]map[string]string) // 空映射，所有记录都将被视为新记录
 	} else {
 		if dm.logger != nil {
 			dm.logger.Infof("✅ 成功获取到 %d 条DNS记录", len(records))
 		}
 
 		// 构建记录映射表，便于快速查找
-		recordsMap = make(map[string]string)
+		// 使用嵌套map: recordsMap[type][name] = value
+		recordsMap = make(map[string]map[string]string)
 		for _, rec := range records {
-			key := rec.Name + "/" + rec.Type
-			recordsMap[key] = rec.Value
+			if recordsMap[rec.Type] == nil {
+				recordsMap[rec.Type] = make(map[string]string)
+			}
+			recordsMap[rec.Type][rec.Name] = rec.Value
+		}
+
+		// 调试日志：显示获取到的记录
+		if dm.logger != nil {
+			for recType, typeRecords := range recordsMap {
+				for name, value := range typeRecords {
+					dm.logger.Debugf("📋 已有记录: type=%s, name=%s, value=%s", recType, name, value)
+				}
+			}
 		}
 	}
 
@@ -105,8 +117,30 @@ func (dm *DNSManager) UpdateDNSRecord(updater config.DNSUpdater, ip string) erro
 		}
 
 		// 在已获取的记录中查找匹配项
-		lookupKey := record.Name + "/" + record.Type
-		if currentIP, found := recordsMap[lookupKey]; found {
+		// 支持多种格式的名称：原始名称、@表示根域名、带域名的完整名称
+		var currentIP string
+		var found bool
+
+		typeRecords, typeExists := recordsMap[record.Type]
+		if typeExists {
+			// 首先尝试直接匹配
+			if currentIP, found = typeRecords[record.Name]; found {
+				dm.logger.Debugf("✅ 直接匹配到记录: name=%s", record.Name)
+			} else if record.Name == "@" {
+				// 尝试匹配空名称（阿里云用空字符串表示根域名）
+				if currentIP, found = typeRecords[""]; found {
+					dm.logger.Debugf("✅ 通过空名称匹配到根域名记录")
+				}
+			} else {
+				// 尝试匹配带域名的完整名称 (如 "www.example.com")
+				fullName := record.Name + "." + updater.Domain
+				if currentIP, found = typeRecords[fullName]; found {
+					dm.logger.Debugf("✅ 通过完整名称匹配到记录: name=%s", fullName)
+				}
+			}
+		}
+
+		if found {
 			if dm.logger != nil {
 				dm.logger.Infof("✅ 找到现有DNS记录: %s = '%s'", recordKey, currentIP)
 			}
